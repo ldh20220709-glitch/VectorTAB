@@ -742,7 +742,9 @@ function toggle(){
     clearInterval(cid); cid=0; count.hidden=true;
     armed=false; stopSched(); hush(); return;
   }
-  playing?P.stop():countIn();
+  if(playing){ P.stop(); return; }
+  /* 从头开始才给一小节预备拍；暂停后从中途续播直接开始，不再数拍 */
+  if(pos>0.01 && pos<TOT) P.go(); else countIn();
 }
 let cid=0;
 /* 预备拍 = 按当前速度实打一小节，频率和正式演奏完全一致（含细分），
