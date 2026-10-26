@@ -216,7 +216,8 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #stage.ribbon{overflow:hidden}
 #stage.ribbon #paper{position:absolute;top:50%;left:0;width:auto;max-width:none;display:flex;
      flex-wrap:nowrap;row-gap:0;align-items:flex-start;padding:0;box-shadow:none;will-change:transform}
-#stage.ribbon .prow{flex:0 0 auto;border-right:1px solid #E6E1D6}
+/* 不要分隔线：跑马灯是一条连续的谱，接缝处多 1px 就是 1px 的瞬跳 */
+#stage.ribbon .prow{flex:0 0 auto}
 #stage.ribbon .strip{width:auto;max-width:none}
 #stage.ribbon #band,#stage.ribbon #cue{display:none!important}
 #stage.ribbon #eof{display:none}
@@ -635,8 +636,15 @@ function buildPlay(){
        m0=113），按它裁等于没裁，半个大括号和 T A B 照样留在条首，
        游标走到那儿要空走 78 源px。从行中途接入（cut0>0）时没有谱号，照常用小节线。 */
     const lx = (b0===0 && r.m0!=null) ? r.m0 : r.bl[b0];
-    const sx0 = first ? 0 : Math.max(0, lx-2);
-    const cutX = Math.min(pg.w, r.bl[nbars]+2);
+    /* 两边都**切在格子上**，不留余量：
+       右边界正好是行尾小节线 → 上一条的最后一个格子落在条尾（gx=100%）
+       左边界正好是第一拍     → 下一条的第一个格子落在条首（gx=0%）
+       这样游标跨接缝时 paper 的 translate 完全连续。
+       原来两边各留 2px（怕切掉小节线本身），实测在跑马灯的放大倍率下
+       连同 1px 分隔线一起是 6.5 屏幕px 的瞬跳 —— 就是「看着衔接好了还是跳一下」。
+       小节线切在中线上只少掉右半边，看着仍是一条细线，不影响读谱。 */
+    const sx0 = first ? 0 : lx;
+    const cutX = Math.min(pg.w, r.bl[nbars]);
     const cw = cutX - sx0;
     const ch = r.y1-r.y0;
     const bb = r.bb.slice(b0,nbars);
