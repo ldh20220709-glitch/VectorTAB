@@ -43,8 +43,12 @@ main{padding:14px 14px 48px}
 .tip{font-size:12px;color:var(--muted);line-height:1.7;margin:-4px 0 12px}
 .tip b{color:var(--accent);font-weight:600}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-      padding:12px 14px;display:flex;align-items:center;gap:11px;margin-bottom:9px;
-      text-decoration:none;color:inherit;position:relative;touch-action:pan-y}
+      padding:8px 6px 8px 14px;display:flex;align-items:center;gap:10px;margin-bottom:9px;
+      text-decoration:none;color:inherit;position:relative;touch-action:pan-y;
+      /* iOS 上这两条必须有，否则长按整行会先弹出链接预览菜单 / 文本选择放大镜，
+         手指还没开始动，拖拽就已经被原生手势抢走了。 */
+      -webkit-touch-callout:none;
+      -webkit-user-select:none;user-select:none}
 .card:hover{border-color:var(--accent)}
 /* 拖拽：让开的行用 transition 滑开，被拖的那行跟手走所以不能有 transition */
 .card.slide{transition:transform .16s cubic-bezier(.2,.7,.3,1)}
@@ -60,17 +64,32 @@ body.dragging .card.drag{border-color:var(--accent)}
 .card .meta{font-family:var(--num);font-size:12px;color:var(--muted);flex:0 0 auto}
 .card .sig{font-family:var(--num);font-size:12px;font-weight:700;color:var(--accent);
       border:1px solid var(--accent);border-radius:5px;padding:2px 6px;flex:0 0 auto}
-/* 抓手。touch-action:none 是触摸拖拽的关键——不写的话手指一动就被浏览器
-   当成滚动页面，拖不起来。鼠标则可以在整行任意位置按下拖。 */
-.grip{appearance:none;background:none;border:0;padding:4px 2px;flex:0 0 auto;
-      color:var(--muted);cursor:grab;touch-action:none;line-height:0;border-radius:6px}
-.grip:hover{color:var(--accent)}
+/* 抓手。两条缺一不可：
+   · touch-action:none —— 不写的话手指一动就被当成滚页面，拖不起来。
+   · 命中区域 ≥44×44 —— 原来只有 22×26，手机上按十次有九次按空，
+     按空了落在 .card 上（touch-action:pan-y），结果就是「页面滚了，行没动」。
+     小圆点保持原来大小，靠 padding 把可点区域撑开。 */
+.grip{appearance:none;background:none;border:0;flex:0 0 auto;
+      width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+      color:var(--muted);cursor:grab;touch-action:none;border-radius:8px;
+      -webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.grip:hover{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.grip:active{cursor:grabbing}
 .grip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.grip svg{display:block;width:18px;height:18px}
+/* 让命中目标永远是 button 本身，不是里面的 svg——svg 的 touch-action 是默认值，
+   交给它当 target 容易出意外 */
+.grip svg{display:block;width:20px;height:20px;pointer-events:none}
 .grip[disabled]{opacity:.25;cursor:default}
 .go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);
     font-family:var(--cjk);font-size:12px;font-weight:600;border-radius:6px;
-    padding:7px 12px;flex:0 0 auto}
+    padding:9px 13px;flex:0 0 auto;-webkit-touch-callout:none}
+/* 窄屏：抓手要占 44px，调号和 BPM 就得让位，否则歌名被截成「弯弯…」。
+   拍号那个小徽章留着——看一眼就知道是不是 6/8，比调号有用。 */
+@media (max-width:480px){
+  .card .meta{display:none}
+  .card{gap:8px;padding-left:10px}
+  .card .no{min-width:20px}
+}
 .empty{text-align:center;color:var(--muted);font-size:13px;line-height:1.8;padding:36px 10px}
 .foot{color:var(--muted);font-size:12px;line-height:1.9;margin-top:22px;
       border-top:1px solid var(--line);padding-top:14px}
@@ -84,7 +103,7 @@ body.dragging .card.drag{border-color:var(--accent)}
   <div class="foot">
     每首是独立的一页，点开才下载那一首的谱面。<br>
     单曲页本身自包含——可以单独发给别人，断网也能弹。<br>
-按住右侧的 ⠿ 上下拖可以调顺序（鼠标也可以直接拖整行）。
+按住右侧的 ⠿ 上下拖可以调顺序；用鼠标时直接拖整行也行。
   </div>
 </main>
 <script>
