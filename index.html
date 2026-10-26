@@ -44,8 +44,15 @@ main{padding:14px 14px 48px}
 .tip b{color:var(--accent);font-weight:600}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
       padding:12px 14px;display:flex;align-items:center;gap:11px;margin-bottom:9px;
-      text-decoration:none;color:inherit}
+      text-decoration:none;color:inherit;position:relative;touch-action:pan-y}
 .card:hover{border-color:var(--accent)}
+/* 拖拽：让开的行用 transition 滑开，被拖的那行跟手走所以不能有 transition */
+.card.slide{transition:transform .16s cubic-bezier(.2,.7,.3,1)}
+.card.drag{z-index:10;border-color:var(--accent);box-shadow:var(--shadow);
+           cursor:grabbing;transition:none}
+body.dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
+body.dragging .card:hover{border-color:var(--line)}
+body.dragging .card.drag{border-color:var(--accent)}
 .card .no{font-family:var(--num);font-size:13px;color:var(--muted);
           min-width:26px;text-align:right;flex:0 0 auto}
 .card .nm{flex:1;min-width:0;font-size:17px;font-weight:600;
@@ -53,11 +60,14 @@ main{padding:14px 14px 48px}
 .card .meta{font-family:var(--num);font-size:12px;color:var(--muted);flex:0 0 auto}
 .card .sig{font-family:var(--num);font-size:12px;font-weight:700;color:var(--accent);
       border:1px solid var(--accent);border-radius:5px;padding:2px 6px;flex:0 0 auto}
-.mv{display:flex;flex-direction:column;gap:2px;flex:0 0 auto}
-.mv button{appearance:none;background:none;border:1px solid var(--line);color:var(--muted);
-      border-radius:5px;width:28px;height:17px;line-height:1;font-size:10px;cursor:pointer;padding:0}
-.mv button:hover:not(:disabled){color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
-.mv button:disabled{opacity:.3;cursor:default}
+/* 抓手。touch-action:none 是触摸拖拽的关键——不写的话手指一动就被浏览器
+   当成滚动页面，拖不起来。鼠标则可以在整行任意位置按下拖。 */
+.grip{appearance:none;background:none;border:0;padding:4px 2px;flex:0 0 auto;
+      color:var(--muted);cursor:grab;touch-action:none;line-height:0;border-radius:6px}
+.grip:hover{color:var(--accent)}
+.grip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.grip svg{display:block;width:18px;height:18px}
+.grip[disabled]{opacity:.25;cursor:default}
 .go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);
     font-family:var(--cjk);font-size:12px;font-weight:600;border-radius:6px;
     padding:7px 12px;flex:0 0 auto}
@@ -73,7 +83,8 @@ main{padding:14px 14px 48px}
   <div id="list"></div>
   <div class="foot">
     每首是独立的一页，点开才下载那一首的谱面。<br>
-    单曲页本身自包含——可以单独发给别人，断网也能弹。
+    单曲页本身自包含——可以单独发给别人，断网也能弹。<br>
+按住右侧的 ⠿ 上下拖可以调顺序（鼠标也可以直接拖整行）。
   </div>
 </main>
 <script>
@@ -125,12 +136,73 @@ function applyOrd(){
   known.sort((a,b)=>pos[a.id]-pos[b.id]);
   LIST=known.concat(rest);                 /* 新加的曲子排在后面，不会丢 */
 }
-function move(id,dir){
-  const i=LIST.findIndex(x=>x.id===id), j=i+dir;
-  if(i<0||j<0||j>=LIST.length) return;
-  const t=LIST[i]; LIST[i]=LIST[j]; LIST[j]=t;
+function reorder(from,to){
+  if(from===to) return;
+  const [it]=LIST.splice(from,1); LIST.splice(to,0,it);
   ORD=LIST.map(x=>x.id); ordWrite(); ordNote=false; render();
 }
+
+/* ======== 拖拽排序 ========
+   用 Pointer Events，鼠标 / 触摸 / 触控笔一套代码全覆盖
+   （HTML5 原生 drag-and-drop 在触摸屏上根本不触发，iPad 会完全拖不动）。
+
+   每行等高，所以目标位置直接算：round(位移 / 行高)。不用在拖的过程中改 DOM，
+   只给「被拖的那行」和「要让开的那些行」加 transform，松手时才真正重排。
+   这样既不会触发反复的 layout，也不会出现元素在手指底下跳来跳去。 */
+let drag=null, dragEndAt=0;
+
+function rowStep(){
+  const c=document.querySelector('.card');
+  return c ? c.offsetHeight + 9 : 0;          /* 9 = .card 的 margin-bottom */
+}
+function beginDrag(ev, card, idx){
+  if(drag || searching()) return;
+  const cards=[...document.querySelectorAll('.card')];
+  drag={card, idx, to:idx, y0:ev.clientY, cards, h:rowStep(), moved:false, pid:ev.pointerId};
+  try{ card.setPointerCapture(ev.pointerId); }catch(e){}
+  cards.forEach(c=>{ if(c!==card) c.classList.add('slide'); });
+  card.classList.add('drag');
+  document.body.classList.add('dragging');
+}
+function moveDrag(ev){
+  if(!drag || ev.pointerId!==drag.pid) return;
+  const dy=ev.clientY-drag.y0;
+  if(!drag.moved){
+    if(Math.abs(dy)<4) return;                /* 没过阈值就还算点击，不算拖 */
+    drag.moved=true;
+  }
+  ev.preventDefault();
+  drag.card.style.transform='translateY('+dy+'px)';
+  const n=drag.cards.length;
+  const to=Math.max(0, Math.min(n-1, drag.idx+Math.round(dy/drag.h)));
+  if(to===drag.to) return;
+  drag.to=to;
+  drag.cards.forEach((c,i)=>{
+    if(c===drag.card) return;
+    let off=0;
+    if(drag.idx<to && i>drag.idx && i<=to) off=-drag.h;
+    else if(drag.idx>to && i>=to && i<drag.idx) off=drag.h;
+    c.style.transform = off ? 'translateY('+off+'px)' : '';
+    /* 序号跟着一起变。不然拖的时候左边是 1 3 4 2 5，看着像出了 bug */
+    const no=c.querySelector('.no');
+    if(no) no.textContent = String(i + (off<0?-1:off>0?1:0) + 1);
+  });
+  const no=drag.card.querySelector('.no');
+  if(no) no.textContent=String(to+1);
+}
+function endDrag(ev){
+  if(!drag || (ev && ev.pointerId!==drag.pid)) return;
+  const {idx,to,moved,cards,card}=drag;
+  try{ card.releasePointerCapture(drag.pid); }catch(e){}
+  cards.forEach(c=>{ c.style.transform=''; c.classList.remove('slide','drag'); });
+  document.body.classList.remove('dragging');
+  drag=null;
+  if(moved){
+    dragEndAt=Date.now();                     /* 抑制紧随其后的那次 click，别跳走 */
+    reorder(idx,to);
+  }
+}
+const searching=()=>!!($('q').value||'').trim();
 function ordDialog(){
   const code=ordCode();
   const v=prompt('当前顺序码（复制走，在别的设备上再粘回来）：\n\n'+code+
@@ -160,31 +232,70 @@ function render(){
   }
   L.appendChild(bar);
   if(ordNote){ const t=el('div','tip');
-    t.innerHTML='曲目顺序已按 <b>order.json</b> 更新。在这里调一下 ▲▼ 就会以本机为准。';
+    t.innerHTML='曲目顺序已按 <b>order.json</b> 更新。在这里拖一下就会以本机为准。';
     L.appendChild(t); }
   if(kw){ const t=el('div','tip');
-    t.innerHTML='搜索时不能调顺序——<b>清空搜索框</b>再用 ▲▼。'; L.appendChild(t); }
+    t.innerHTML='搜索时不能调顺序——<b>清空搜索框</b>再拖。'; L.appendChild(t); }
   if(!show.length){ L.appendChild(el('div','empty', kw?'没有叫「'+$('q').value.trim()+'」的曲子。':'还没有曲目。')); return; }
   show.forEach(s=>{
     const i=LIST.indexOf(s);
     const a=el('a','card'); a.href=s.file+'?lib=1';
+    /* <a> 默认可以被原生拖拽（拖链接），不关掉的话一按下就被浏览器接管，
+       pointermove 再也不来，整行拖就是拖不动。 */
+    a.draggable=false;
+    a.addEventListener('dragstart', ev=>ev.preventDefault());
     a.appendChild(el('span','no',String(i+1)));
     a.appendChild(el('b','nm',s.title));
     if(s.sig) a.appendChild(el('span','sig',s.sig));
     a.appendChild(el('span','meta',(s.key||'')+(s.bpm?'  '+s.bpm+' BPM':'')));
-    const mv=el('div','mv');
-    const up=el('button',null,'▲'), dn=el('button',null,'▼');
-    up.type=dn.type='button';
-    up.setAttribute('aria-label','上移'); dn.setAttribute('aria-label','下移');
-    up.disabled=!!kw||i<=0; dn.disabled=!!kw||i>=LIST.length-1;
-    const stop=e=>{ e.preventDefault(); e.stopPropagation(); };
-    up.onclick=e=>{ stop(e); move(s.id,-1); };
-    dn.onclick=e=>{ stop(e); move(s.id,1); };
-    mv.append(up,dn); a.appendChild(mv);
+
+    const g=el('button','grip'); g.type='button';
+    g.setAttribute('aria-label','拖动排序，或用上下方向键');
+    g.title='拖动排序';
+    g.innerHTML='<svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">'
+      +'<circle cx="6.5" cy="4" r="1.5"/><circle cx="11.5" cy="4" r="1.5"/>'
+      +'<circle cx="6.5" cy="9" r="1.5"/><circle cx="11.5" cy="9" r="1.5"/>'
+      +'<circle cx="6.5" cy="14" r="1.5"/><circle cx="11.5" cy="14" r="1.5"/></svg>';
+    g.disabled=!!kw;
+    /* 抓手：鼠标/触摸/触控笔都走 pointer 事件 */
+    g.addEventListener('pointerdown', ev=>{
+      if(kw) return;
+      ev.preventDefault(); ev.stopPropagation();
+      beginDrag(ev, a, i);
+    });
+    /* 键盘兜底：抓手聚焦后上下键也能挪，不必非得用鼠标 */
+    g.addEventListener('keydown', ev=>{
+      if(kw) return;
+      const d = ev.key==='ArrowUp' ? -1 : ev.key==='ArrowDown' ? 1 : 0;
+      if(!d) return;
+      ev.preventDefault();
+      const j=i+d; if(j<0||j>=LIST.length) return;
+      reorder(i,j);
+      const gs=document.querySelectorAll('.grip');
+      if(gs[j]) gs[j].focus();
+    });
+    g.addEventListener('click', ev=>{ ev.preventDefault(); ev.stopPropagation(); });
+    a.appendChild(g);
+
     a.appendChild(el('span','go','演奏'));
+    /* 鼠标图省事：整行任意位置按下也能拖（移动超过阈值才算拖）。
+       触摸不这么干——那样会把「划一下滚页面」变成拖行。 */
+    a.addEventListener('pointerdown', ev=>{
+      if(kw || ev.pointerType!=='mouse' || ev.button!==0) return;
+      if(ev.target.closest('.go,.grip')) return;
+      beginDrag(ev, a, i);
+    });
+    /* 刚拖完浏览器还会补一个 click，不拦住就会跳进那首歌 */
+    a.addEventListener('click', ev=>{
+      if(drag || Date.now()-dragEndAt < 250){ ev.preventDefault(); ev.stopPropagation(); }
+    });
     L.appendChild(a);
   });
 }
+
+addEventListener('pointermove', moveDrag, {passive:false});
+addEventListener('pointerup', endDrag);
+addEventListener('pointercancel', endDrag);
 $('q').oninput=render;
 ordRead();
 const h=(location.hash||'').match(/[#&]o=(GS1[0-9a-f]+)/i);
