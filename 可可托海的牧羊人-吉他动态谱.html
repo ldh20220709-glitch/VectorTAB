@@ -249,13 +249,16 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #dock{flex:0 0 auto;display:flex;flex-direction:column;align-items:stretch;gap:9px;padding:10px 14px;
       padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));background:var(--panel);
       border-top:1px solid var(--line);z-index:5;transition:opacity .35s}
-/* 播放 3 秒后把顶栏和底栏收起来，整屏让给谱面；点谱面暂停时再放回来。
-   用 height:0 收，不用 display:none —— flex 里能做过渡，收/放不会闪一下，
-   而且 #stage 是 flex:1，这两条一塌下去谱面是**真的变高**，不是盖上去。 */
-#bar,#dock{transition:height .26s ease, padding .26s ease, opacity .2s ease}
-#app.lean #bar,#app.lean #dock{
-  height:0;min-height:0;padding-top:0;padding-bottom:0;
-  border-width:0;opacity:0;overflow:hidden;pointer-events:none}
+/* 播放 3 秒后把顶栏推上去、底栏推下去，整屏让给谱面；点谱面暂停时推回来。
+   用**负 margin**，不用 height:0 ——
+   height 收缩是把盒子压扁，内容钉在原位被裁掉，看着像「挤扁」；
+   负 margin 是盒子连内容一起平移出屏幕，看着才是「推出去」，
+   而且同样把空间让出来（#stage 是 flex:1，会实实在在变高，不是盖一层上去）。
+   位移量用 JS 量出来写进 --barH / --dockH，写死像素在不同机型上会露边。 */
+#app{overflow:hidden}
+#bar,#dock{transition:margin .3s cubic-bezier(.33,0,.2,1)}
+#app.lean #bar{margin-top:calc(-1 * var(--barH,46px));pointer-events:none}
+#app.lean #dock{margin-bottom:calc(-1 * var(--dockH,120px));pointer-events:none}
 @media (prefers-reduced-motion:reduce){ #bar,#dock{transition:none} }
 #seek{position:relative;height:20px;cursor:pointer;touch-action:none}
 #seek::before{content:"";position:absolute;left:0;right:0;top:8px;height:4px;border-radius:2px;background:var(--rail)}
@@ -934,16 +937,25 @@ function prevRow(){ const a=at(pos); rowTo((a.b>1.2||a.i===0)?a.i:a.i-1); }
 let tid=0, ltid=0, leanGuard=0;
 /* 收起/放下之后要重算一次版面：#stage 高度变了，跑马灯的居中和
    整页模式的滚动位置都得跟着走。等过渡结束再算，省得算在半路上。 */
+/* 推移距离 = 各自的实际高度。安全区、字号、机型都会影响它，不能写死。 */
+function measureChrome(){
+  const r=document.documentElement.style;
+  if(!$('app').classList.contains('lean')){
+    r.setProperty('--barH', $('bar').offsetHeight+'px');
+    r.setProperty('--dockH', $('dock').offsetHeight+'px');
+  }
+}
 function lean(on){
   const app=$('app'); if(!app) return;
+  if(on) measureChrome();
   if(app.classList.contains('lean')===!!on) return;
   app.classList.toggle('lean', !!on);
   /* 栏目一塌下去 #stage 变高，浏览器会自己调 scrollTop。
      那不是用户在滚，得先把「手动滚动=暂停」那条守卫按住，
      否则收起的瞬间就会被判成「已停住」自动暂停（实测收起后 20ms 就中招）。 */
-  leanGuard=Date.now()+700;
+  leanGuard=Date.now()+800;
   clearTimeout(ltid);
-  ltid=setTimeout(()=>{ fit(); layout(); paint(); follow(null); }, 300);
+  ltid=setTimeout(()=>{ fit(); layout(); paint(); follow(null); }, 340);
 }
 function idle(){ clearTimeout(tid);
   if(playing) tid=setTimeout(()=>lean(true), 3000); }
@@ -1052,7 +1064,7 @@ addEventListener('keydown',e=>{
 });
 /* 原来动一下鼠标就重置计时。现在的规矩是：开始播放 3 秒后收起，
    只有「点谱面暂停」才放回来，中途晃鼠标不该把它顶出来。 */
-addEventListener('resize',()=>{ fit(); layout(); paint(); if(!playing) follow(null); });
+addEventListener('resize',()=>{ measureChrome(); fit(); layout(); paint(); if(!playing) follow(null); });
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playing) wake(true); });
 
 /* 自测钩子：整页逻辑包在 IIFE 里，外部拿不到内部状态，
