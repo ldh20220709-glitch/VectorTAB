@@ -636,25 +636,34 @@ function buildPlay(){
        m0=113），按它裁等于没裁，半个大括号和 T A B 照样留在条首，
        游标走到那儿要空走 78 源px。从行中途接入（cut0>0）时没有谱号，照常用小节线。 */
     const lx = (b0===0 && r.m0!=null) ? r.m0 : r.bl[b0];
-    /* 两边都**切在格子上**，不留余量：
-       右边界正好是行尾小节线 → 上一条的最后一个格子落在条尾（gx=100%）
-       左边界正好是第一拍     → 下一条的第一个格子落在条首（gx=0%）
-       这样游标跨接缝时 paper 的 translate 完全连续。
-       原来两边各留 2px（怕切掉小节线本身），实测在跑马灯的放大倍率下
-       连同 1px 分隔线一起是 6.5 屏幕px 的瞬跳 —— 就是「看着衔接好了还是跳一下」。
-       小节线切在中线上只少掉右半边，看着仍是一条细线，不影响读谱。 */
-    const sx0 = first ? 0 : lx;
-    const cutX = Math.min(pg.w, r.bl[nbars]);
+    /* 两边都要留余量，但余量**不能让游标在接缝处瞬跳**：
+         左边 PADL —— 齐着第一拍切会把第一个字的左半边削掉（实测简谱/歌词
+                      普遍比 m0 还靠左 5~13px，个别 23px）
+         右边 PADR —— 齐着小节线切只剩左半边，两个小节就连在一起没分隔
+       余量里没有拍子，所以**把它摊进首尾两个小节的插值**（见下面 gx 的算法）：
+       首小节从谱条左缘起算、末小节算到谱条右缘，接缝处 gx 正好 0% 和 100%，
+       translate 完全连续；代价是首尾小节的格子各宽百分之几，一个小节内就追平。
+       不能改用「负 margin 让谱条重叠」那招 —— 实测很多行的行尾小节线前面
+       一点空白都没有（0px），重叠会直接盖掉上一行最后一个音符。 */
+    const PADL = 14, PADR = 3;
+    const sx0 = first ? 0 : Math.max(0, lx-PADL);
+    const cutX = Math.min(pg.w, r.bl[nbars]+PADR);
     const cw = cutX - sx0;
     const ch = r.y1-r.y0;
     const bb = r.bb.slice(b0,nbars);
     const gx=[];
     for(let i=b0;i<nbars;i++){
-      /* 行首第一小节从 m0 起（谱号/TAB字母/拍号那截不占拍，游标别从那儿走）；
-         从行中途接入(cut0>0)时没有谱号，照常用小节线 */
-      const a=(i===b0 && b0===0 && r.m0!=null) ? r.m0 : r.bl[i], b=r.bl[i+1], n=r.bb[i];
+      /* 首小节的左锚点：
+           第一条谱 —— 用 m0（那儿有曲名和调号，整截留着，但游标得从第一拍起走）
+           其余谱条 —— 用谱条左缘 sx0，把 PADL 那截摊进这一小节
+         末小节的右锚点一律用谱条右缘 cutX，把 PADR 摊进去。
+         于是接缝两侧正好是 100% 和 0%，游标跨过去不跳。 */
+      const a = (i!==b0) ? r.bl[i]
+              : (first ? ((b0===0 && r.m0!=null) ? r.m0 : r.bl[b0]) : sx0);
+      const b = (i===nbars-1) ? cutX : r.bl[i+1];
+      const n = r.bb[i];
       for(let j=0;j<n;j++) gx.push((a+(b-a)*j/n - sx0)/cw*100); }
-    gx.push((r.bl[nbars]-sx0)/cw*100);
+    gx.push((cutX-sx0)/cw*100);
     items.push({it, r, pg, cw, ch, sx0, gx, bb});
   });
   if(!items.length){ paper.appendChild(el('div','empty','这首还没有谱面内容。')); return; }
