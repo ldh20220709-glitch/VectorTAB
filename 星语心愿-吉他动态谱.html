@@ -249,7 +249,14 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #dock{flex:0 0 auto;display:flex;flex-direction:column;align-items:stretch;gap:9px;padding:10px 14px;
       padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));background:var(--panel);
       border-top:1px solid var(--line);z-index:5;transition:opacity .35s}
-#dock.dim{opacity:.16}
+/* 播放 3 秒后把顶栏和底栏收起来，整屏让给谱面；点谱面暂停时再放回来。
+   用 height:0 收，不用 display:none —— flex 里能做过渡，收/放不会闪一下，
+   而且 #stage 是 flex:1，这两条一塌下去谱面是**真的变高**，不是盖上去。 */
+#bar,#dock{transition:height .26s ease, padding .26s ease, opacity .2s ease}
+#app.lean #bar,#app.lean #dock{
+  height:0;min-height:0;padding-top:0;padding-bottom:0;
+  border-width:0;opacity:0;overflow:hidden;pointer-events:none}
+@media (prefers-reduced-motion:reduce){ #bar,#dock{transition:none} }
 #seek{position:relative;height:20px;cursor:pointer;touch-action:none}
 #seek::before{content:"";position:absolute;left:0;right:0;top:8px;height:4px;border-radius:2px;background:var(--rail)}
 #fill{position:absolute;left:0;top:8px;height:4px;border-radius:2px;background:var(--accent);width:0}
@@ -879,7 +886,7 @@ const P={
         raf=requestAnimationFrame(frame); idle(); },
   stop(){ if(!playing && !raf) return;
         playing=false; armed=false; cancelAnimationFrame(raf); raf=0; stopSched(); icon(); wake(false); hush();
-        dock.classList.remove('dim'); clearTimeout(tid); paint(); }
+        clearTimeout(tid); lean(false); paint(); }
 };
 function toggle(){
   if(cid){                       /* 预备拍途中再按 = 取消 */
@@ -924,9 +931,22 @@ function countIn(){
 function seek(u){ pos=Math.max(0,Math.min(TOT,u)); cur=-1; anchor(); paint(); follow(null); }
 function rowTo(i){ i=Math.max(0,Math.min(PL.length-1,i)); seek(CUM[i]+1e-6); }
 function prevRow(){ const a=at(pos); rowTo((a.b>1.2||a.i===0)?a.i:a.i-1); }
-let tid=0;
-function idle(){ clearTimeout(tid); dock.classList.remove('dim');
-  if(playing) tid=setTimeout(()=>dock.classList.add('dim'),3000); }
+let tid=0, ltid=0, leanGuard=0;
+/* 收起/放下之后要重算一次版面：#stage 高度变了，跑马灯的居中和
+   整页模式的滚动位置都得跟着走。等过渡结束再算，省得算在半路上。 */
+function lean(on){
+  const app=$('app'); if(!app) return;
+  if(app.classList.contains('lean')===!!on) return;
+  app.classList.toggle('lean', !!on);
+  /* 栏目一塌下去 #stage 变高，浏览器会自己调 scrollTop。
+     那不是用户在滚，得先把「手动滚动=暂停」那条守卫按住，
+     否则收起的瞬间就会被判成「已停住」自动暂停（实测收起后 20ms 就中招）。 */
+  leanGuard=Date.now()+700;
+  clearTimeout(ltid);
+  ltid=setTimeout(()=>{ fit(); layout(); paint(); follow(null); }, 300);
+}
+function idle(){ clearTimeout(tid);
+  if(playing) tid=setTimeout(()=>lean(true), 3000); }
 function layout(){
   if(ribbon){
     if(!PL.length) return;
@@ -1006,6 +1026,7 @@ function pick(clientY){
   rowTo(k<0?0:k); say('→ 第'+((k<0?0:k)+1)+'段');
 }
 stage.onscroll=()=>{ if(ribbon||drag) return;
+  if(Date.now()<leanGuard){ written=stage.scrollTop; sy=stage.scrollTop; return; }
   if(playing && Math.abs(stage.scrollTop-written)>3){ P.stop(); say('已停住'); } };
 function grab(e){ const b=sb.getBoundingClientRect();
   seek(Math.max(0,Math.min(1,(e.clientX-b.left)/b.width))*TOT); }
@@ -1029,7 +1050,8 @@ addEventListener('keydown',e=>{
   else if(k==='r'||k==='R'){ P.stop(); seek(0); }
   else if(k==='Escape'){ spdpop.hidden=true; }
 });
-['pointermove','pointerdown'].forEach(ev=>addEventListener(ev, idle));
+/* 原来动一下鼠标就重置计时。现在的规矩是：开始播放 3 秒后收起，
+   只有「点谱面暂停」才放回来，中途晃鼠标不该把它顶出来。 */
 addEventListener('resize',()=>{ fit(); layout(); paint(); if(!playing) follow(null); });
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playing) wake(true); });
 
