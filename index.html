@@ -224,32 +224,6 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
      will-change:transform}
 #cue::before{content:"";position:absolute;top:-6px;left:50%;transform:translateX(-50%);
      border:5px solid transparent;border-top:8px solid var(--cue)}
-/* ---- 火焰残影 ----
-   全程只改 transform / opacity，走合成器，不碰 layout 和 paint：
-   · 「糊」用预先烘焙好的渐变，绝不用 filter:blur()——blur 挂在每帧移动的元素上，
-     Safari/iPad 每帧都要重做一次模糊，是最贵的走法。
-   · 拖尾长度按**距离**定，不按帧定。66 BPM 下游标每秒才走 20px，
-     按帧滞后（6 帧≈4px）根本看不见。
-   · 换行和跳转时整组归零，否则火焰会横着拖过整页。
-   prefers-reduced-motion 下这几个元素压根不建。 */
-#trail{position:absolute;left:0;top:0;pointer-events:none;z-index:2;display:none;
-     transform-origin:100% 50%;will-change:transform,opacity;
-     background:
-       radial-gradient(140% 72% at 100% 50%, rgba(255,246,206,.95) 0%, rgba(255,186,56,.72) 24%,
-                       rgba(240,86,32,.38) 54%, rgba(240,86,32,0) 80%),
-       linear-gradient(to right, rgba(214,40,40,0) 0%, rgba(236,70,28,.34) 42%,
-                       rgba(255,140,32,.72) 80%, rgba(255,226,150,.92) 100%)}
-.ech{position:absolute;left:0;top:0;width:3px;margin-left:-1.5px;border-radius:2px;
-     pointer-events:none;will-change:transform,opacity;
-     background:linear-gradient(to bottom,
-       rgba(255,224,130,0) 0%, rgba(255,176,46,.95) 16%,
-       rgba(240,86,32,.9) 64%, rgba(214,40,40,0) 100%)}
-#spark{position:absolute;left:0;top:0;width:54px;height:54px;margin:-27px 0 0 -27px;
-     pointer-events:none;z-index:3;will-change:transform,opacity;
-     background:radial-gradient(circle closest-side,
-       rgba(255,247,214,.95) 0%, rgba(255,190,70,.60) 34%,
-       rgba(240,86,32,.24) 60%, rgba(240,86,32,0) 100%)}
-#stage.ribbon #trail,#stage.ribbon #spark,#stage.ribbon .ech{display:none!important}
 /* 跳转预告：整页模式下反复要往回跳，提前约一小节在目标位置闪一个箭头 */
 #jump{position:absolute;width:3px;margin-left:-1.5px;background:var(--cue);border-radius:2px;
      z-index:5;pointer-events:none;display:none;box-shadow:0 0 10px var(--cue-glow);
@@ -591,10 +565,6 @@ const stage=$('stage'), paper=$('paper'), dock=$('dock'), pico=$('pico'),
       rem=$('rem'), where=$('where'), beatv=$('beat'), count=$('count'), flash=$('flash'),
       spv=$('spv'), popv=$('popv'), popt=$('popt'), spdpop=$('spdpop'), lineEl=$('line');
 let band=null, cue=null, jump=null, jwarn=null;
-/* 火焰残影。TR 存最近的 {x,t}，用来估速度；拖尾长度按距离给，不按帧给。 */
-let trail=null, spark=null, echs=[];
-const TR=[], ECHN=4, ECHD=[7,16,27,40], TAIL0=52, TAILMAX=120;
-let trRow=-1, trX=0;
 const REDUCE=matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let PL=[], CUM=[0], TOT=0, DOWN={}, CLK={}, INBAR=[], LAB=[], prows=[], psts=[];
@@ -720,15 +690,6 @@ function buildPlay(){
   jump=el('div'); jump.id='jump';
   jwarn=el('div'); jwarn.id='jwarn';
   paper.append(band,cue,jump,jwarn);
-  trail=null; echs=[]; spark=null; TR.length=0; trRow=-1;
-  if(!REDUCE){
-    trail=el('div'); trail.id='trail';
-    for(let i=0;i<ECHN;i++){ const e=el('div','ech'); echs.push(e); }
-    spark=el('div'); spark.id='spark';
-    paper.insertBefore(trail, cue);
-    echs.forEach(e=>paper.insertBefore(e, cue));
-    paper.insertBefore(spark, cue);
-  }
   prows=[...paper.querySelectorAll('.prow')];
   psts=prows.map(r=>r.querySelector('.strip'));
   CUM=[0]; PL.forEach(m=>CUM.push(CUM[CUM.length-1]+m.beats));
@@ -811,46 +772,6 @@ function paint(){
   /* 高度只在换行时改（会引起 layout），位置每帧只改 transform（只走合成器） */
   if(cue.style.height!==h+'px') cue.style.height=h+'px';
   cue.style.transform='translate3d('+mx+'px,'+top+'px,0)';
-  if(trail) burn(mx, top, h, m.row, x0);
-}
-
-/* 火焰残影：拖尾右端贴着游标，长度 = 基准长度 + 速度带来的拉伸，
-   再被「本行谱条左边界」夹住，免得火苗烧到谱条外面去。 */
-function burn(mx, top, h, row, x0){
-  if(row!==trRow){ TR.length=0; trRow=row;
-    trail.style.height=h+'px';
-    echs.forEach(e=>{ e.style.height=h+'px'; }); }
-  if(TR.length && Math.abs(TR[0].x-mx)>80) TR.length=0;   /* 跳转：别拉出一条长条 */
-  const now=performance.now();
-  TR.unshift({x:mx,t:now});
-  while(TR.length>24 || (TR.length>2 && now-TR[TR.length-1].t>420)) TR.pop();
-  const on = playing && TR.length>2;
-  trail.style.display=spark.style.display='block';
-  echs.forEach(e=>{ e.style.display='block'; });
-  if(!on){ trail.style.opacity=spark.style.opacity='0';
-           echs.forEach(e=>{ e.style.opacity='0'; }); return; }
-
-  const dt=(now-TR[TR.length-1].t)/1000;
-  const v=dt>0 ? Math.abs(mx-TR[TR.length-1].x)/dt : 0;      /* px/s */
-  const flick=0.5+0.5*Math.sin(now/70)*Math.sin(now/113);     /* 两个不同频率，火苗才不规律 */
-  let len=Math.min(TAILMAX, TAIL0+v*0.45)*(0.86+0.14*flick);
-  len=Math.max(18, Math.min(len, mx-x0-2));                   /* 不烧出谱条 */
-  trail.style.width=len+'px';
-  trail.style.transform='translate3d('+(mx-len)+'px,'+top+'px,0)';
-  trail.style.opacity=(0.74+0.2*flick).toFixed(3);
-  for(let i=0;i<echs.length;i++){
-    const e=echs[i], d=ECHD[i]*(0.8+0.4*flick);
-    e.style.transform='translate3d('+Math.max(x0, mx-d)+'px,'+top+'px,0)';
-    e.style.opacity=((0.58-0.12*i)*(0.68+0.32*flick)).toFixed(3);
-  }
-  spark.style.transform='translate3d('+mx+'px,'+(top+h*0.5)+'px,0)';
-  spark.style.opacity=(0.58+0.32*flick).toFixed(3);
-}
-
-function douse(){
-  if(trail){ trail.style.opacity='0'; spark.style.opacity='0';
-             echs.forEach(e=>{ e.style.opacity='0'; }); }
-  TR.length=0;
 }
 
 function follow(dt){
@@ -944,7 +865,7 @@ const P={
         armed=false;
         raf=requestAnimationFrame(frame); idle(); },
   stop(){ if(!playing && !raf) return;
-        playing=false; armed=false; cancelAnimationFrame(raf); raf=0; stopSched(); icon(); wake(false); hush(); douse();
+        playing=false; armed=false; cancelAnimationFrame(raf); raf=0; stopSched(); icon(); wake(false); hush();
         dock.classList.remove('dim'); clearTimeout(tid); paint(); }
 };
 function toggle(){
@@ -987,7 +908,7 @@ function countIn(){
     count.firstElementChild.textContent=Math.max(1, mains-Math.floor(el/(spu*GRP*1000)));
   },40);
 }
-function seek(u){ pos=Math.max(0,Math.min(TOT,u)); cur=-1; TR.length=0; anchor(); paint(); follow(null); }
+function seek(u){ pos=Math.max(0,Math.min(TOT,u)); cur=-1; anchor(); paint(); follow(null); }
 function rowTo(i){ i=Math.max(0,Math.min(PL.length-1,i)); seek(CUM[i]+1e-6); }
 function prevRow(){ const a=at(pos); rowTo((a.b>1.2||a.i===0)?a.i:a.i-1); }
 let tid=0;
