@@ -1,4 +1,9 @@
+# 默认全忽略（PDF 课件、制谱源文件、图片都很大，不进仓库）
 *
-!index.html
+
+# 网站本体：目录页 + 每首自己的一页 + 曲目顺序
 !.gitignore
+!index.html
+!v2.html
 !order.json
+!*-吉他动态谱.html
