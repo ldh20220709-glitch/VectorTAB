@@ -16,18 +16,16 @@
       window.__SEEDIDS = Object.keys(pack);        /* 给曲库页标注哪些是随文件带来的 */
       var si=sd.imgs||{};
       for(var sk in si) IMG[sk]=si[sk];            /* 图片先并进来，下面要靠它判断 */
-      /* 本机存过同名曲目时，以前一律让本机的赢，结果是：重新生成过的文件（图片内容变了、
-         内容哈希算出来的图片 id 跟着变）打开后，旧记录指向的图片 id 已经不存在 —— 整页没图，白屏。
-         现在只在「本机那份的图片还找得着」时才保留它（保住用户自己的改动），否则用文件里带的。 */
-      for(var sid in pack){
-        if(GONE[sid]) continue;
-        var cur=SONGS[sid], live=false;
-        try{
-          live = !!cur && !!(cur.pages||[]).length
-                 && (cur.pages||[]).every(function(pg){ return !!IMG[pg.a]; });
-        }catch(e){ live=false; }
-        if(!live) SONGS[sid]=pack[sid];
-      }
+      /* 文件永远赢。
+         以前的写法是「本机那份的图片还找得着就保留本机的」，意图是保住用户自己的改动。
+         但本地改谱的入口早就去掉了，localStorage 在这里只是缓存，不该有话语权。
+         那条规则的实际后果是：谱面数据（m0 / 小节线 / 演奏顺序 / 段落）修好并重新发布后，
+         凡是以前打开过这首歌的浏览器**永远拿不到新数据**——图片内容没变、哈希没变、
+         id 也没变，判定一直是「本机那份还活着」，于是旧记录一直赢。
+         实测现象：《弯弯的月亮》游标仍停在谱表左缘（旧的 bl[0]），而文件里的 m0 早就改对了；
+         两台设备谁先打开过谁就卡在更老的数据上，看起来像「手机和电脑不一致」。
+         顺带也不再看 GONE —— 删除入口同样早就没有了，留着只会让曲目凭空消失。 */
+      for(var sid in pack) SONGS[sid]=pack[sid];
     }catch(e){}
   }
   function wr(k,v){ localStorage.setItem(K+k, JSON.stringify(v)); }   /* 满了会抛，向上传 */
