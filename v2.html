@@ -61,7 +61,6 @@ body.dragging .card.drag{border-color:var(--accent)}
           min-width:26px;text-align:right;flex:0 0 auto}
 .card .nm{flex:1;min-width:0;font-size:17px;font-weight:600;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.card .meta{font-family:var(--num);font-size:12px;color:var(--muted);flex:0 0 auto}
 /* 抓手。两条缺一不可：
    · touch-action:none —— 不写的话手指一动就被当成滚页面，拖不起来。
    · 命中区域 ≥44×44 —— 原来只有 22×26，手机上按十次有九次按空，
@@ -81,12 +80,6 @@ body.dragging .card.drag{border-color:var(--accent)}
 .go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);
     font-family:var(--cjk);font-size:12px;font-weight:600;border-radius:6px;
     padding:9px 13px;flex:0 0 auto;-webkit-touch-callout:none}
-/* 窄屏：抓手要占 44px，调号和 BPM 就得让位，否则歌名被截成「弯弯…」 */
-@media (max-width:480px){
-  .card .meta{display:none}
-  .card{gap:8px;padding-left:10px}
-  .card .no{min-width:20px}
-}
 .empty{text-align:center;color:var(--muted);font-size:13px;line-height:1.8;padding:36px 10px}
 .foot{color:var(--muted);font-size:12px;line-height:1.9;margin-top:22px;
       border-top:1px solid var(--line);padding-top:14px}
@@ -103,7 +96,7 @@ body.dragging .card.drag{border-color:var(--accent)}
   </div>
 </main>
 <script>
-const SONGS=[{"id": "sg-1cfe67ed6d75", "title": "成都", "file": "成都-吉他动态谱.html", "key": "1 = C", "sig": "6/8", "bpm": 68}, {"id": "sg-87f08416007c", "title": "弯弯的月亮", "file": "弯弯的月亮-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 68}, {"id": "sg-94f349b31237", "title": "声声慢", "file": "声声慢-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 68}, {"id": "sg-944c74d45f4a", "title": "你是人间四月天", "file": "你是人间四月天-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 72}, {"id": "sg-fe23f7c63bd7", "title": "一次就好", "file": "一次就好-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 66}, {"id": "sg-d365f9dd26c1", "title": "栀子花开", "file": "栀子花开-吉他动态谱.html", "key": "1 = C", "sig": "3/4", "bpm": 96}, {"id": "sg-36690f0e82c8", "title": "情非得已", "file": "情非得已-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 72}, {"id": "sg-aa49f6f5d093", "title": "隐形的翅膀", "file": "隐形的翅膀-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 70}, {"id": "sg-d729d5a0aadf", "title": "来生缘", "file": "来生缘-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 66}, {"id": "sg-7bcfac491d95", "title": "星空", "file": "星空-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 76}, {"id": "sg-edf73602db69", "title": "同桌的你", "file": "同桌的你-吉他动态谱.html", "key": "1 = C", "sig": "6/8", "bpm": 56}, {"id": "sg-b04211cf2da6", "title": "春天里", "file": "春天里-吉他动态谱.html", "key": "1 = C", "sig": "6/8", "bpm": 50}, {"id": "sg-19f14860b48f", "title": "余香", "file": "余香-吉他动态谱.html", "key": "1 = C", "sig": "6/8", "bpm": 52}, {"id": "sg-d490b5fd608e", "title": "朋友", "file": "朋友-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 66}, {"id": "sg-e47cd1e407d0", "title": "往后余生", "file": "往后余生-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 72}, {"id": "sg-e4e698287c50", "title": "有没有人告诉你", "file": "有没有人告诉你-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 62}, {"id": "sg-839cf8772fef", "title": "传奇", "file": "传奇-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 66}, {"id": "sg-26e6b6e14f05", "title": "滴答", "file": "滴答-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 66}, {"id": "sg-79f43157ab14", "title": "星语心愿", "file": "星语心愿-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 68}, {"id": "sg-74d77bc01540", "title": "声声慢（进阶）", "file": "声声慢（进阶）-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 68}, {"id": "sg-f24620cd3f66", "title": "灰姑娘", "file": "灰姑娘-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 72}, {"id": "sg-4858d49e58b2", "title": "后来", "file": "后来-吉他动态谱.html", "key": "1 = C", "sig": "4/4", "bpm": 66}, {"id": "sg-1f98066a3c39", "title": "温柔", "file": "温柔-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 72}, {"id": "sg-d94485d7d47d", "title": "那些花儿", "file": "那些花儿-吉他动态谱.html", "key": "1 = G", "sig": "2/4", "bpm": 88}, {"id": "sg-92c1b6c8fd3f", "title": "旅行", "file": "旅行-吉他动态谱.html", "key": "1 = D", "sig": "4/4", "bpm": 72}, {"id": "sg-1a0ce6d6cf3e", "title": "月亮代表我的心", "file": "月亮代表我的心-吉他动态谱.html", "key": "1 = A", "sig": "4/4", "bpm": 68}, {"id": "sg-405ad9124220", "title": "我们的时光", "file": "我们的时光-吉他动态谱.html", "key": "1 = E", "sig": "4/4", "bpm": 76}, {"id": "sg-c469fa4e9e10", "title": "你的眼神", "file": "你的眼神-吉他动态谱.html", "key": "1 = F", "sig": "4/4", "bpm": 66}, {"id": "sg-948066a68a79", "title": "可可托海的牧羊人", "file": "可可托海的牧羊人-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 72}, {"id": "sg-60918311bdc2", "title": "成都（进阶）", "file": "成都（进阶）-吉他动态谱.html", "key": "1 = C", "sig": "6/8", "bpm": 68}, {"id": "sg-4c83cc194f6f", "title": "多年以后", "file": "多年以后-吉他动态谱.html", "key": "1 = G", "sig": "4/4", "bpm": 70}];
+const SONGS=[{"id": "sg-1cfe67ed6d75", "title": "成都", "file": "成都-吉他动态谱.html"}, {"id": "sg-87f08416007c", "title": "弯弯的月亮", "file": "弯弯的月亮-吉他动态谱.html"}, {"id": "sg-94f349b31237", "title": "声声慢", "file": "声声慢-吉他动态谱.html"}, {"id": "sg-944c74d45f4a", "title": "你是人间四月天", "file": "你是人间四月天-吉他动态谱.html"}, {"id": "sg-fe23f7c63bd7", "title": "一次就好", "file": "一次就好-吉他动态谱.html"}, {"id": "sg-d365f9dd26c1", "title": "栀子花开", "file": "栀子花开-吉他动态谱.html"}, {"id": "sg-36690f0e82c8", "title": "情非得已", "file": "情非得已-吉他动态谱.html"}, {"id": "sg-aa49f6f5d093", "title": "隐形的翅膀", "file": "隐形的翅膀-吉他动态谱.html"}, {"id": "sg-d729d5a0aadf", "title": "来生缘", "file": "来生缘-吉他动态谱.html"}, {"id": "sg-7bcfac491d95", "title": "星空", "file": "星空-吉他动态谱.html"}, {"id": "sg-edf73602db69", "title": "同桌的你", "file": "同桌的你-吉他动态谱.html"}, {"id": "sg-b04211cf2da6", "title": "春天里", "file": "春天里-吉他动态谱.html"}, {"id": "sg-19f14860b48f", "title": "余香", "file": "余香-吉他动态谱.html"}, {"id": "sg-d490b5fd608e", "title": "朋友", "file": "朋友-吉他动态谱.html"}, {"id": "sg-e47cd1e407d0", "title": "往后余生", "file": "往后余生-吉他动态谱.html"}, {"id": "sg-e4e698287c50", "title": "有没有人告诉你", "file": "有没有人告诉你-吉他动态谱.html"}, {"id": "sg-839cf8772fef", "title": "传奇", "file": "传奇-吉他动态谱.html"}, {"id": "sg-26e6b6e14f05", "title": "滴答", "file": "滴答-吉他动态谱.html"}, {"id": "sg-79f43157ab14", "title": "星语心愿", "file": "星语心愿-吉他动态谱.html"}, {"id": "sg-74d77bc01540", "title": "声声慢（进阶）", "file": "声声慢（进阶）-吉他动态谱.html"}, {"id": "sg-f24620cd3f66", "title": "灰姑娘", "file": "灰姑娘-吉他动态谱.html"}, {"id": "sg-4858d49e58b2", "title": "后来", "file": "后来-吉他动态谱.html"}, {"id": "sg-1f98066a3c39", "title": "温柔", "file": "温柔-吉他动态谱.html"}, {"id": "sg-d94485d7d47d", "title": "那些花儿", "file": "那些花儿-吉他动态谱.html"}, {"id": "sg-92c1b6c8fd3f", "title": "旅行", "file": "旅行-吉他动态谱.html"}, {"id": "sg-1a0ce6d6cf3e", "title": "月亮代表我的心", "file": "月亮代表我的心-吉他动态谱.html"}, {"id": "sg-405ad9124220", "title": "我们的时光", "file": "我们的时光-吉他动态谱.html"}, {"id": "sg-c469fa4e9e10", "title": "你的眼神", "file": "你的眼神-吉他动态谱.html"}, {"id": "sg-948066a68a79", "title": "可可托海的牧羊人", "file": "可可托海的牧羊人-吉他动态谱.html"}, {"id": "sg-60918311bdc2", "title": "成都（进阶）", "file": "成都（进阶）-吉他动态谱.html"}, {"id": "sg-4c83cc194f6f", "title": "多年以后", "file": "多年以后-吉他动态谱.html"}];
 const $=i=>document.getElementById(i);
 const el=(t,c,x)=>{const n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=x; return n;};
 
@@ -290,7 +283,6 @@ function render(){
     a.addEventListener('dragstart', ev=>ev.preventDefault());
     a.appendChild(el('span','no',String(i+1)));
     a.appendChild(el('b','nm',s.title));
-    a.appendChild(el('span','meta',(s.key||'')+(s.bpm?'  '+s.bpm+' BPM':'')));
 
     const g=el('button','grip'); g.type='button';
     g.setAttribute('aria-label','拖动排序，或用上下方向键');
