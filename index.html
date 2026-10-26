@@ -102,8 +102,7 @@ body.dragging .card.drag{border-color:var(--accent)}
   <div id="list"></div>
   <div class="foot">
     每首是独立的一页，点开才下载那一首的谱面。<br>
-    单曲页本身自包含——可以单独发给别人，断网也能弹。<br>
-按住右侧的 ⠿ 上下拖可以调顺序；用鼠标时直接拖整行也行。
+    单曲页本身自包含——可以单独发给别人，断网也能弹。
   </div>
 </main>
 <script>
@@ -168,7 +167,7 @@ function reorder(from,to){
    每行等高，所以目标位置直接算：round(位移 / 行高)。不用在拖的过程中改 DOM，
    只给「被拖的那行」和「要让开的那些行」加 transform，松手时才真正重排。
    这样既不会触发反复的 layout，也不会出现元素在手指底下跳来跳去。 */
-let drag=null, dragEndAt=0;
+let drag=null, dragEndAt=0, autoRaf=0, lastY=0;
 
 function rowStep(){
   const c=document.querySelector('.card');
@@ -177,20 +176,22 @@ function rowStep(){
 function beginDrag(ev, card, idx){
   if(drag || searching()) return;
   const cards=[...document.querySelectorAll('.card')];
-  drag={card, idx, to:idx, y0:ev.clientY, cards, h:rowStep(), moved:false, pid:ev.pointerId};
+  lastY=ev.clientY;
+  /* 起点存**页面坐标**（clientY + scrollY），不是视口坐标。
+     拖到边缘要自动滚页面，一滚 clientY 不变但元素位置变了，
+     用视口坐标算位移会原地不动——这正是「拖不到最顶上」的原因。 */
+  drag={card, idx, to:idx, y0:ev.clientY+scrollY, cards, h:rowStep(),
+        moved:false, pid:ev.pointerId};
   try{ card.setPointerCapture(ev.pointerId); }catch(e){}
   cards.forEach(c=>{ if(c!==card) c.classList.add('slide'); });
   card.classList.add('drag');
   document.body.classList.add('dragging');
 }
-function moveDrag(ev){
-  if(!drag || ev.pointerId!==drag.pid) return;
-  const dy=ev.clientY-drag.y0;
-  if(!drag.moved){
-    if(Math.abs(dy)<4) return;                /* 没过阈值就还算点击，不算拖 */
-    drag.moved=true;
-  }
-  ev.preventDefault();
+/* 位移、让位、序号都从 lastY + scrollY 推出来，
+   这样「手指动」和「页面自己滚」两种情况走同一段代码。 */
+function applyDrag(){
+  if(!drag) return;
+  const dy=(lastY+scrollY)-drag.y0;
   drag.card.style.transform='translateY('+dy+'px)';
   const n=drag.cards.length;
   const to=Math.max(0, Math.min(n-1, drag.idx+Math.round(dy/drag.h)));
@@ -209,9 +210,36 @@ function moveDrag(ev){
   const no=drag.card.querySelector('.no');
   if(no) no.textContent=String(to+1);
 }
+/* 拖到视口上下边缘就自动滚。手指停在边缘不动时页面也要继续滚，
+   所以必须跑 rAF，不能只在 pointermove 里做。 */
+function autoScroll(){
+  if(!drag){ autoRaf=0; return; }
+  const vh=innerHeight, edge=Math.min(84, vh*0.18), MAX=22;
+  let v=0;
+  if(lastY<edge)            v=-MAX*(1-lastY/edge);
+  else if(lastY>vh-edge)    v= MAX*(1-(vh-lastY)/edge);
+  if(v){
+    const before=scrollY;
+    scrollBy(0, v);
+    if(scrollY!==before) applyDrag();         /* 真滚动了才重算 */
+  }
+  autoRaf=requestAnimationFrame(autoScroll);
+}
+function moveDrag(ev){
+  if(!drag || ev.pointerId!==drag.pid) return;
+  lastY=ev.clientY;
+  if(!drag.moved){
+    if(Math.abs((ev.clientY+scrollY)-drag.y0)<4) return;  /* 没过阈值仍算点击 */
+    drag.moved=true;
+    if(!autoRaf) autoRaf=requestAnimationFrame(autoScroll);
+  }
+  ev.preventDefault();
+  applyDrag();
+}
 function endDrag(ev){
   if(!drag || (ev && ev.pointerId!==drag.pid)) return;
   const {idx,to,moved,cards,card}=drag;
+  cancelAnimationFrame(autoRaf); autoRaf=0;
   try{ card.releasePointerCapture(drag.pid); }catch(e){}
   cards.forEach(c=>{ c.style.transform=''; c.classList.remove('slide','drag'); });
   document.body.classList.remove('dragging');
