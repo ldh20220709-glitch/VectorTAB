@@ -96,7 +96,7 @@
   --accent:#C06A22; --accent-ink:#FFF7EE; --rail:#E0D8CA; --paper:#FFFFFF;
   --accent-soft:rgba(192,106,34,.22); --scrim:rgba(239,235,227,.80);
   --cue:#D62828; --cue-soft:rgba(214,40,40,.065); --cue-glow:rgba(214,40,40,.42);
-  --ok:#2F7D56;
+  --ok:#2F7D56; --leanT:2s;
   --shadow:0 1px 2px rgba(28,26,23,.10),0 8px 28px rgba(28,26,23,.10);
   /* 纯系统字体栈，零外部请求 */
   --num:ui-sans-serif,-apple-system,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
@@ -256,7 +256,16 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
    而且同样把空间让出来（#stage 是 flex:1，会实实在在变高，不是盖一层上去）。
    位移量用 JS 量出来写进 --barH / --dockH，写死像素在不同机型上会露边。 */
 #app{overflow:hidden}
-#bar,#dock{transition:margin .3s cubic-bezier(.33,0,.2,1)}
+/* 2 秒，先慢后快带点弹性。时长写成变量，JS 那边的重算延时和滚动守卫都按它算，
+   改一个地方就够，不会出现「动画还在走、守卫已经撤了」。
+
+   收和放用两条不同的缓动 —— CSS 取的是**目标状态**上的 transition：
+     放下（回到基态）  easeOutBack：冲进来，略微过头，再回弹坐稳
+     收起（进 .lean）  easeInBack ：先朝反方向压一点点（蓄力），再加速推出去
+   这个 back 曲线的控制点超出 0~1，所以 margin 会短暂越过终点，
+   弹性就是这么来的；越过的幅度只有几像素，不会露馅。 */
+#bar,#dock{transition:margin var(--leanT,2s) cubic-bezier(.34,1.56,.64,1)}
+#app.lean #bar,#app.lean #dock{transition-timing-function:cubic-bezier(.36,0,.66,-.56)}
 #app.lean #bar{margin-top:calc(-1 * var(--barH,46px));pointer-events:none}
 #app.lean #dock{margin-bottom:calc(-1 * var(--dockH,120px));pointer-events:none}
 @media (prefers-reduced-motion:reduce){ #bar,#dock{transition:none} }
@@ -957,6 +966,7 @@ function seek(u){ pos=Math.max(0,Math.min(TOT,u)); cur=-1; anchor(); paint(); fo
 function rowTo(i){ i=Math.max(0,Math.min(PL.length-1,i)); seek(CUM[i]+1e-6); }
 function prevRow(){ const a=at(pos); rowTo((a.b>1.2||a.i===0)?a.i:a.i-1); }
 let tid=0, ltid=0, leanGuard=0;
+const LEAN_MS=2000;      /* 和 CSS 的 --leanT 对齐 */
 /* 收起/放下之后要重算一次版面：#stage 高度变了，跑马灯的居中和
    整页模式的滚动位置都得跟着走。等过渡结束再算，省得算在半路上。 */
 /* 推移距离 = 各自的实际高度。安全区、字号、机型都会影响它，不能写死。 */
@@ -975,9 +985,9 @@ function lean(on){
   /* 栏目一塌下去 #stage 变高，浏览器会自己调 scrollTop。
      那不是用户在滚，得先把「手动滚动=暂停」那条守卫按住，
      否则收起的瞬间就会被判成「已停住」自动暂停（实测收起后 20ms 就中招）。 */
-  leanGuard=Date.now()+800;
+  leanGuard=Date.now()+LEAN_MS+300;
   clearTimeout(ltid);
-  ltid=setTimeout(()=>{ fit(); layout(); paint(); follow(null); }, 340);
+  ltid=setTimeout(()=>{ fit(); layout(); paint(); follow(null); }, LEAN_MS+60);
 }
 function idle(){ clearTimeout(tid);
   if(playing) tid=setTimeout(()=>lean(true), 3000); }
