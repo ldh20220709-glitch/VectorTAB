@@ -373,6 +373,11 @@ async function boot(){
   }
   await loadLib();
   if(window.__BOOT){                      /* 单曲离线包：直接打开演奏 */
+    /* 一首一页之后，页签没有意义了：「曲库」点开只会列出它自己这一首。
+       整包多曲的离线版（make_bundle.py）没有 __BOOT，页签照常保留。
+       回目录靠左上角的「← 曲库」，那个只在目录页跳进来时（?lib=1）才出现。 */
+    const tb=document.querySelector('#bar .tabs');
+    if(tb) tb.hidden=true;
     const s=LIB.find(x=>x.id===window.__BOOT);
     if(s){ open_(s); show('play'); }
     else {                                /* 绝不留一片空白给用户 */
@@ -549,8 +554,8 @@ function ordDialog(){
   alert('顺序已套用（'+ids.length+' 首）。');
 }
 function open_(s){ S=s;
+  /* 顶栏只放歌名。拍号底部那排已经有了（「♩4/4」），顶上再挂一个是重复。 */
   $('songname').textContent=s.title||'';
-  if(s.sig) $('songname').appendChild(el('b',null,s.sig));
 }
 
 /* ================= 视图切换 ================= */
