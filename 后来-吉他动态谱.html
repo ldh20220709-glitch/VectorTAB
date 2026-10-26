@@ -626,10 +626,16 @@ function buildPlay(){
     const b0 = it.cut0!=null ? Math.max(0,Math.min(it.cut0, r.bb.length-1)) : 0;
     const nbars = it.cut!=null ? Math.min(it.cut, r.bb.length) : r.bb.length;
     if(nbars<=b0) return;
-    /* 紧裁到首尾小节线：左右两侧的空白（谱号、行尾余量）会让游标在接缝处
-       凭空走一段，跑马灯模式下就是「突然跳一下」。留 2px 只为不切掉小节线本身。
-       唯独第一条保留左边空白——那儿有谱号和调号，齐根切掉看着别扭。 */
-    const sx0 = first ? 0 : Math.max(0, r.bl[b0]-2);
+    /* 紧裁到「第一拍」和「行尾小节线」：左右两侧的空白会让游标在接缝处凭空走一段，
+       跑马灯下就是「突然跳一下」。留 2px 只为不切掉小节线本身。
+       唯独第一条保留左边空白——那儿有曲名和调号，齐根切掉看着别扭。
+
+       左边界要用 m0（第一拍的位置），不能用 bl[0]：
+       bl[0] 常常是**谱表起始线**，落在谱号左边（实测《弯弯的月亮》第 2 行 bl[0]=35、
+       m0=113），按它裁等于没裁，半个大括号和 T A B 照样留在条首，
+       游标走到那儿要空走 78 源px。从行中途接入（cut0>0）时没有谱号，照常用小节线。 */
+    const lx = (b0===0 && r.m0!=null) ? r.m0 : r.bl[b0];
+    const sx0 = first ? 0 : Math.max(0, lx-2);
     const cutX = Math.min(pg.w, r.bl[nbars]+2);
     const cw = cutX - sx0;
     const ch = r.y1-r.y0;
