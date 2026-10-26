@@ -587,7 +587,7 @@ const stage=$('stage'), paper=$('paper'), dock=$('dock'), pico=$('pico'),
       sb=$('seek'), fill=$('fill'), knob=$('knob'), durv=$('durv'),
       rem=$('rem'), where=$('where'), beatv=$('beat'), count=$('count'), flash=$('flash'),
       spv=$('spv'), popv=$('popv'), popt=$('popt'), spdpop=$('spdpop'), lineEl=$('line');
-let band=null, cue=null, jump=null, jwarn=null;
+let band=null, cue=null, jump=null, jwarn=null, jumpAt=-1;
 const REDUCE=matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let PL=[], CUM=[0], TOT=0, DOWN={}, CLK={}, INBAR=[], LAB=[], prows=[], psts=[];
@@ -774,6 +774,9 @@ function paint(){
       back = n.sr<m.sr || (n.sr===m.sr && n.b0<m.b1);
     }
   }
+  /* 记给 follow()：马上要往回跳的话，顺便把目标行也拉进视野，
+     好让「几拍后跳回第 N 行」那条提示和它指的那一行同时看得见。 */
+  jumpAt = (warn && back && nx<PL.length) ? PL[nx].row : -1;
   if(warn){
     const tr=prows[PL[nx].row], ts=psts[PL[nx].row];
     jump.style.display='block';
@@ -804,10 +807,29 @@ function follow(dt){
      原来留 20% 在上方，下一行常常露不全，换行像是突然蹦出来。 */
   if(!playing && pos<=0){ sy=0; stage.scrollTop=0; written=0; return; }  /* 未播放时停在顶端看标题 */
   let want=r.offsetTop - vh*0.08;
+
+  /* 屏幕够高时（手机竖屏一屏能塞好几行），把当前行往下挪，上面留一行已经弹过的，
+     眼睛好对位置。电脑是宽扁屏，塞不下就不会触发，所以不用分设备判断。 */
+  const k=prows.indexOf(r), pv=k>0 ? prows[k-1] : null;
+  if(pv){
+    const w2=pv.offsetTop - vh*0.03;
+    if(r.offsetTop + r.offsetHeight + 8 - w2 <= vh) want=w2;   /* 两行都塞得下才让 */
+  }
+
   const nx=(i+1<PL.length)? prows[PL[i+1].row] : null;
   if(nx && nx!==r && nx.offsetTop>r.offsetTop){
     const need=nx.offsetTop + nx.offsetHeight + 8 - vh;   /* 让下一行底边也进来 */
     want=Math.max(want, Math.min(need, r.offsetTop - 6)); /* 但当前行的顶不能被顶出去 */
+  }
+
+  /* 马上要往回跳：把回跳目标行也拉进视野。装不下就不动——
+     正在弹的那行任何时候都不能被挤出屏幕。 */
+  if(jumpAt>=0){
+    const t=prows[jumpAt];
+    if(t && t.offsetTop < r.offsetTop
+         && r.offsetTop + r.offsetHeight + 8 - t.offsetTop <= vh){
+      want=Math.min(want, t.offsetTop - vh*0.03);
+    }
   }
   want=Math.max(0, Math.min(stage.scrollHeight-stage.clientHeight, want));
   if(dt===null||REDUCE||Math.abs(want-sy)>stage.clientHeight*1.3) sy=want;
