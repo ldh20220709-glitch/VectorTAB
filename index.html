@@ -62,8 +62,6 @@ body.dragging .card.drag{border-color:var(--accent)}
 .card .nm{flex:1;min-width:0;font-size:17px;font-weight:600;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card .meta{font-family:var(--num);font-size:12px;color:var(--muted);flex:0 0 auto}
-.card .sig{font-family:var(--num);font-size:12px;font-weight:700;color:var(--accent);
-      border:1px solid var(--accent);border-radius:5px;padding:2px 6px;flex:0 0 auto}
 /* 抓手。两条缺一不可：
    · touch-action:none —— 不写的话手指一动就被当成滚页面，拖不起来。
    · 命中区域 ≥44×44 —— 原来只有 22×26，手机上按十次有九次按空，
@@ -83,8 +81,7 @@ body.dragging .card.drag{border-color:var(--accent)}
 .go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);
     font-family:var(--cjk);font-size:12px;font-weight:600;border-radius:6px;
     padding:9px 13px;flex:0 0 auto;-webkit-touch-callout:none}
-/* 窄屏：抓手要占 44px，调号和 BPM 就得让位，否则歌名被截成「弯弯…」。
-   拍号那个小徽章留着——看一眼就知道是不是 6/8，比调号有用。 */
+/* 窄屏：抓手要占 44px，调号和 BPM 就得让位，否则歌名被截成「弯弯…」 */
 @media (max-width:480px){
   .card .meta{display:none}
   .card{gap:8px;padding-left:10px}
@@ -293,7 +290,6 @@ function render(){
     a.addEventListener('dragstart', ev=>ev.preventDefault());
     a.appendChild(el('span','no',String(i+1)));
     a.appendChild(el('b','nm',s.title));
-    if(s.sig) a.appendChild(el('span','sig',s.sig));
     a.appendChild(el('span','meta',(s.key||'')+(s.bpm?'  '+s.bpm+' BPM':'')));
 
     const g=el('button','grip'); g.type='button';
