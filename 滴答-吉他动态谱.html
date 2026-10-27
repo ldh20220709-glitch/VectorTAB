@@ -666,7 +666,11 @@ function buildPlay(){
        一点空白都没有（0px），重叠会直接盖掉上一行最后一个音符。 */
     const PADL = 14, PADR = 3;
     const sx0 = first ? 0 : Math.max(0, lx-PADL);
-    const cutX = Math.min(pg.w, r.bl[nbars]+PADR);
+    /* 右边要切在**行尾小节线之前**：那根线留着的话，接缝处就是
+       「上一条自带的收尾线 + 我们画的那根」= 看着像双小节线 ‖，
+       和原图里的单线 | 不一样。切掉它，接缝只留自己画的那一根。
+       末格子因此对应 cutX 而不是 bl[nbars]，差 PADR 个源px ≈ 0.04 拍，可以忽略。 */
+    const cutX = Math.max(sx0+8, Math.min(pg.w, r.bl[nbars]-PADR));
     const cw = cutX - sx0;
     const ch = r.y1-r.y0;
     const bb = r.bb.slice(b0,nbars);
