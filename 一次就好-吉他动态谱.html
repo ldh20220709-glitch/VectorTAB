@@ -1094,7 +1094,7 @@ const SKINS={
           cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'220',kara:'1',lineWidth:'3',ballFx:'fire',fall:'petal'},
   summer:{name:'夏', bg:'#c6ecf3',title:'#043a52',text:'#1f5d74',jianpu:'#032f42',lyric:'#044a63',tab:'#06303f',
           chordname:'#cc4600',chorddiagram:'#0d4a5c',house:'#008f9e', ballColor:'#ffab00',karaColor:'#c73d00',lineColor:'#0097a7',
-          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'320',kara:'1',lineWidth:'3',ballFx:'fire',fall:'rain'},
+          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'320',kara:'1',lineWidth:'3',ballFx:'fire',fall:'rain', rowTint:20},
   autumn:{name:'秋', bg:'#f5dcae',title:'#4a1e04',text:'#6e3f15',jianpu:'#331503',lyric:'#5a2306',tab:'#331503',
           chordname:'#c42a08',chorddiagram:'#4f2c10',house:'#9a5a00', ballColor:'#ff6a13',karaColor:'#b8250a',lineColor:'#c8460f',
           cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'240',kara:'1',lineWidth:'3',ballFx:'fire',fall:'leaf'},
@@ -1134,7 +1134,7 @@ const SC=(()=>{
     const W=$('wrapP'), lc=vals.lineColor||'';
     if(lc){ W.style.setProperty('--cue',lc);
             W.style.setProperty('--cue-glow','color-mix(in srgb,'+lc+' 42%,transparent)');
-            W.style.setProperty('--cue-soft','color-mix(in srgb,'+lc+' 6.5%,transparent)'); }
+            W.style.setProperty('--cue-soft','color-mix(in srgb,'+lc+' '+tintOf(vals)+'%,transparent)'); }
     else ['--cue','--cue-glow','--cue-soft'].forEach(k=>W.style.removeProperty(k));
     const lw=Math.max(1,Math.min(8,+vals.lineWidth||3));
     W.style.setProperty('--lw',lw+'px'); $('lWidthV').textContent=lw+' px';
@@ -1144,7 +1144,7 @@ const SC=(()=>{
     cursorMode(); if(PL.length) paint();
     /* 当前配色正好等于哪套皮肤就亮哪个；手动改过任何一项就都不亮（= 自定义） */
     AUTO = vals.season==='auto'; sKey='';
-    for(const id in SKINS){ const k=SKINS[id], on=!AUTO && Object.keys(k).every(f=>f==='name' || (vals[f]||'').toLowerCase()===k[f]);
+    for(const id in SKINS){ const k=SKINS[id], on=!AUTO && Object.keys(k).every(f=>f==='name' || f==='rowTint' || (vals[f]||'').toLowerCase()===k[f]);
       const b=document.querySelector('#scSkins [data-skin="'+id+'"]'); if(b) b.setAttribute('aria-checked',String(on)); }
     $('scSkins').querySelector('[data-skin="auto"]').setAttribute('aria-checked',String(AUTO));
     if(AUTO && PL.length) tick(pos/TOT);
@@ -1154,9 +1154,13 @@ const SC=(()=>{
      手调过的写 #cfg=<和出厂值不同的项，JSON → base64url>；全是出厂值就不带。
      打开时链接里带了就按链接的来，并存进本机（之后从目录点别的歌也是这个样子） */
   const DEFS=()=>Object.assign({},SC_DEF,BDEF);
+  /* 当前行底色浓度：底色和竖线色都和某套皮肤一致时，用那套的 rowTint（夏天 20%），否则 6.5% */
+  function tintOf(v){ const lc=(v.lineColor||'').toLowerCase();
+    for(const id in SKINS){ const k=SKINS[id]; if(k.rowTint && k.bg===(v.bg||'').toLowerCase() && k.lineColor===lc) return k.rowTint; }
+    return 6.5; }
   function shareTag(v){
     if(v.season==='auto') return 'skin=auto';
-    for(const id in SKINS){ const k=SKINS[id]; if(Object.keys(k).every(f=>f==='name' || (v[f]||'').toLowerCase()===k[f])) return 'skin='+id; }
+    for(const id in SKINS){ const k=SKINS[id]; if(Object.keys(k).every(f=>f==='name' || f==='rowTint' || (v[f]||'').toLowerCase()===k[f])) return 'skin='+id; }
     const D=DEFS(), o={}; for(const k in D) if(k!=='season' && (v[k]||'')!==(D[k]||'')) o[k]=v[k];
     if(!Object.keys(o).length) return '';
     return 'cfg='+btoa(JSON.stringify(o)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
@@ -1197,7 +1201,7 @@ const SC=(()=>{
     const lc=mix(A.lineColor,B.lineColor,tf);
     W.style.setProperty('--cue',lc);
     W.style.setProperty('--cue-glow','color-mix(in srgb,'+lc+' 42%,transparent)');
-    W.style.setProperty('--cue-soft','color-mix(in srgb,'+lc+' 6.5%,transparent)');
+    W.style.setProperty('--cue-soft','color-mix(in srgb,'+lc+' '+((A.rowTint||6.5)+((B.rowTint||6.5)-(A.rowTint||6.5))*tf).toFixed(1)+'%,transparent)');
     BTLEN = Math.round(+A.ballTrailLen + (B.ballTrailLen-A.ballTrailLen)*t);
     const D = t<0.5 ? A : B;
     BFX = D.ballFx; FALL.set(D.fall, true);
@@ -1248,7 +1252,7 @@ const SC=(()=>{
     const ln2=document.createElement('i'); ln2.style.top='21px'; ln2.style.background=k.tab;
     const ball=document.createElement('b'); ball.style.background=k.ballColor;
     sw.append(ch,ln,ln2,ball); b.append(sw, el('span',null,k.name));
-    b.onclick=()=>{ const v=Object.assign(cur(),k); delete v.name; fill(v); commit(); };
+    b.onclick=()=>{ const v=Object.assign(cur(),k); delete v.name; delete v.rowTint; fill(v); commit(); };
     $('scSkins').appendChild(b); }
   { /* 第 5 个：四季自动轮换。色块是四季底色的渐变，四个点是四季的小球色 */
     const b=el('button'); b.type='button'; b.dataset.skin='auto'; b.setAttribute('role','radio'); b.setAttribute('aria-checked','false');
