@@ -1145,7 +1145,33 @@ const SC=(()=>{
     for(const id in SKINS){ const k=SKINS[id], on=!AUTO && Object.keys(k).every(f=>f==='name' || (vals[f]||'').toLowerCase()===k[f]);
       const b=document.querySelector('#scSkins [data-skin="'+id+'"]'); if(b) b.setAttribute('aria-checked',String(on)); }
     $('scSkins').querySelector('[data-skin="auto"]').setAttribute('aria-checked',String(AUTO));
-    if(AUTO && PL.length) tick(pos/TOT); };
+    if(AUTO && PL.length) tick(pos/TOT);
+    shareHash(vals); };
+  /* ---- 皮肤跟着链接走（用户：链接发给朋友，打开要是同样的皮肤，不能是默认效果）----
+     每次设置生效都把当前样子写进地址栏的 #：现成皮肤写短的 #skin=summer / #skin=auto；
+     手调过的写 #cfg=<和出厂值不同的项，JSON → base64url>；全是出厂值就不带。
+     打开时链接里带了就按链接的来，并存进本机（之后从目录点别的歌也是这个样子） */
+  const DEFS=()=>Object.assign({},SC_DEF,BDEF);
+  function shareTag(v){
+    if(v.season==='auto') return 'skin=auto';
+    for(const id in SKINS){ const k=SKINS[id]; if(Object.keys(k).every(f=>f==='name' || (v[f]||'').toLowerCase()===k[f])) return 'skin='+id; }
+    const D=DEFS(), o={}; for(const k in D) if(k!=='season' && (v[k]||'')!==(D[k]||'')) o[k]=v[k];
+    if(!Object.keys(o).length) return '';
+    return 'cfg='+btoa(JSON.stringify(o)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  function shareHash(v){
+    const t=shareTag(v), h=(location.hash||'').replace(/^#/,'').split('&').filter(x=>x && !/^(skin|cfg)=/.test(x));
+    if(t) h.push(t);
+    const nh=h.length ? '#'+h.join('&') : '';
+    if(nh!==location.hash) try{ history.replaceState(history.state,'',location.pathname+location.search+nh); }catch(e){}
+  }
+  function fromHash(){
+    const h=location.hash||'', ms=h.match(/[#&]skin=(\w+)/), mc=h.match(/[#&]cfg=([\w-]+)/);
+    if(ms){ if(ms[1]==='auto') return Object.assign(DEFS(),SKINS.spring,{season:'auto'});
+            if(SKINS[ms[1]]) return Object.assign(DEFS(),SKINS[ms[1]],{season:''}); }
+    if(mc) try{ return Object.assign(DEFS(),JSON.parse(atob(mc[1].replace(/-/g,'+').replace(/_/g,'/'))),{season:''}); }catch(e){}
+    return null;
+  }
   /* ---- 四季自动轮换：整首按播放进度四等分，春→夏→秋→冬。
      换季不是一下跳过去：以分界点为中心、前后各 0.2 个季度（约全曲 10%）做渐变，
      颜色逐帧插值；冰火、飘落这种不能插值的，在渐变走到一半时换（飘落是软切换，旧的飘完再走） */
@@ -1239,7 +1265,9 @@ const SC=(()=>{
     gear.hidden=!on || $('playView').hidden;
     panel.classList.toggle('img',!on);
     $('paper').classList.toggle('vecp',on);
-    if(on){ const s0=saved(); fill(s0); apply(s0); return; }
+    if(on){ const lk=fromHash();
+      if(lk){ delete lk.name; for(const k in SC_DEF) put(k,lk[k]); for(const k in BDEF) bput(k,lk[k]); }
+      const s0=lk||saved(); fill(s0); apply(s0); return; }
     panel.hidden=true;
     for(const k in SC_DEF) $('paper').style.removeProperty('--sc-'+k);
     $('paper').style.removeProperty('--ball'); $('paper').style.removeProperty('--kara'); FALL.set('none');
@@ -1564,7 +1592,13 @@ function karaPaint(a){
       const rr=S.rows[m.sr];
       st._ly=[...st.querySelectorAll('svg.vec text.cf-lyric[data-b]')]
         .filter(e=>{ const y=+e.getAttribute('y'); return y>rr.y0 && y<=rr.y1; })
-        .map(e=>({e, b:+e.dataset.b, v:+e.dataset.v||0}));
+        .map(e=>{
+          /* 缩放中心写死成谱面坐标里这个字自己的中心。别靠 transform-box:fill-box——
+             iOS Safari 对 SVG <text> 不认它，退回整张谱的左上角当原点，字就从别处「飞」过来再飞回去（实测） */
+          const fs=+e.getAttribute('font-size')||17;
+          e.style.transformBox='view-box';
+          e.style.transformOrigin=(+e.getAttribute('x'))+'px '+(+e.getAttribute('y')-fs*0.36)+'px';
+          return {e, b:+e.dataset.b, v:+e.dataset.v||0}; });
       st._lyV=st._ly.reduce((x,q)=>Math.max(x,q.v),0);
       /* 第 2 段词常常只印了不同的那几个字，副歌（滴答滴答…）只印在第 1 行：
          某拍上本段没词、第 1 行有，就亮第 1 行的 */
@@ -1791,6 +1825,9 @@ function xHit(A){
   if(!BXHIT || REDUCE || !A.key) return;
   const st=psts[PL[A.i].row], e=st && st.querySelector('[data-k="'+A.key+'"]');
   if(!e || !e.animate) return;
+  /* 和卡拉 OK 的字同一个坑：iOS Safari 不认 SVG 的 transform-box:fill-box，× 会绕谱面左上角缩放、整个甩出去。
+     data-k 本身就是音头在谱面里的坐标（x_y），直接拿来当缩放中心 */
+  if(!e._o){ const [kx,ky]=A.key.split('_'); e.style.transformBox='view-box'; e.style.transformOrigin=kx+'px '+ky+'px'; e._o=1; }
   e.animate([{transform:'scale(1,1)'},
              {transform:'scale(1.32,.52)', offset:.22},      /* 压扁 */
              {transform:'scale(.9,1.16)',  offset:.58},      /* 回弹过头 */
