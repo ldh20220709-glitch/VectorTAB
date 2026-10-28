@@ -267,6 +267,7 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #scPanel .seg input{position:absolute;opacity:0;pointer-events:none}
 #scPanel .seg label:has(input:checked){background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 #scPanel .scr.off,#scPanel .seg.off{opacity:.4;pointer-events:none}
+#scRows .scr.gap{margin-top:12px}
 #scPanel .seg.falls label{font-size:11.5px}
 /* 图片谱：只有竖线这一组有意义，谱面配色/小球都藏起来 */
 #scPanel.img .vonly{display:none}
@@ -354,6 +355,8 @@ svg.vec [data-k]{transform-box:fill-box;transform-origin:50% 50%}
 /* 卡拉 OK：唱到的字变色加粗，这一段弹过去就恢复（.ko 由 karaPaint 加减） */
 /* 亮起那一下弹一弹（放大再回原大小），之后保持原字号——一直放大着用户说不好看。
    用 transform 以字自身中心缩放：不重排、只走合成，邻字不被挤动 */
+/* 字体：#paper / #fall（放大镜里的克隆）挂 .vfont，变量 --vfont 是字体栈 */
+.vfont svg text.cf-lyric,.vfont svg text.cf-title,.vfont svg text.cf-text{font-family:var(--vfont)}
 svg.vec text.cf-lyric{transition:fill .12s;transform-box:fill-box;transform-origin:50% 50%}
 svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop .3s ease-out}
 @keyframes kpop{0%{transform:scale(1)}35%{transform:scale(1.3)}100%{transform:scale(1)}}
@@ -535,6 +538,14 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
         <label><input type="radio" name="fall" value="rain">雨点</label>
         <label><input type="radio" name="fall" value="leaf">落叶</label>
         <label><input type="radio" name="fall" value="snow">雪花</label>
+      </div>
+      <h3 class="sub">字体</h3>
+      <div class="seg falls fonts" role="radiogroup" aria-label="字体">
+        <label><input type="radio" name="font" value="">默认</label>
+        <label style="font-family:'LXGW WenKai Screen',KaiTi,STKaiti,serif"><input type="radio" name="font" value="kai">文楷</label>
+        <label style="font-family:'Noto Serif SC',Songti SC,STSong,serif"><input type="radio" name="font" value="song">宋体</label>
+        <label style="font-family:'Ma Shan Zheng',cursive"><input type="radio" name="font" value="brush">毛笔</label>
+        <label style="font-family:'ZCOOL KuaiLe',cursive"><input type="radio" name="font" value="fun">卡通</label>
       </div>
       <h3 class="sub">歌词</h3>
       <div class="scr"><span>卡拉 OK</span><input type="checkbox" id="kOn" aria-label="卡拉 OK"></div>
@@ -1084,10 +1095,12 @@ const FALL=(()=>{
 /* 谱面配色：8 类元素各一个颜色，变量挂在 #paper 上，所有谱条的 <svg> 一起继承。
    出厂色、名字、存档键（localStorage score_<k>）都和 制谱-omr 的 draw.py 一致，
    在数字谱单页里调好的配色，到这里也认。 */
-const SC_DEF={bg:'#ffffff',title:'#1c1a17',text:'#555555',jianpu:'#111111',lyric:'#111111',tab:'#111111',
-              chordname:'#b4530e',chorddiagram:'#333333',house:'#1c6b4a'};
-const SC_LAB={bg:'背景色',title:'歌名颜色',text:'文字颜色（其他文字）',jianpu:'简谱颜色',lyric:'歌词颜色',tab:'六线谱颜色',
-              chordname:'和弦名颜色',chorddiagram:'和弦图颜色',house:'反复/房子线颜色'};
+/* 键的顺序就是设置面板里的排列（用户定的）：背景 ｜ 歌名·歌词·其他文字 ｜ 六线谱·和弦名·和弦图 ｜ 简谱·房子线 */
+const SC_DEF={bg:'#ffffff', title:'#1c1a17',lyric:'#111111',text:'#555555',
+              tab:'#111111',chordname:'#b4530e',chorddiagram:'#333333', jianpu:'#111111',house:'#1c6b4a'};
+const SC_GAP={title:1,tab:1,jianpu:1};   /* 每组第一项上面空一点 */
+const SC_LAB={bg:'背景色',title:'歌名颜色',text:'其他文字颜色',jianpu:'简谱颜色',lyric:'歌词颜色',tab:'六线谱颜色',
+              chordname:'和弦名颜色',chorddiagram:'和弦图颜色',house:'房子线颜色'};
 /* 四季皮肤 = 设置里 4 套默认参数（用户原话）：每套给齐全部设置项——谱面 9 色、小球色、卡拉 OK 色、竖线色，
    以及开关（跟谱指示、水花、× 回弹、火球、卡拉 OK）、火焰长度、竖线粗细。点一下全套换上，之后各项照样能单独再调 */
 const SKINS={
@@ -1112,7 +1125,7 @@ const SC=(()=>{
   const put=(k,v)=>{ try{ v==null ? localStorage.removeItem('score_'+k) : localStorage.setItem('score_'+k,v); }catch(e){} };
   /* 小球两项不属于 draw.py 那 8 色，单独存：vt_ballColor / vt_ballTrail */
   /* lineColor 空串 = 跟随主题（--cue，深色模式自动换）；只有用户挑过色才写死 */
-  const BDEF={ballColor:'#f5891f', ballSplash:'1', ballXHit:'1', ballTrail:'1', ballTrailLen:'200', cursor:'line', lineColor:'', lineWidth:'3', kara:'1', karaColor:'#d9480f', ballFx:'fire', fall:'none', season:''};
+  const BDEF={ballColor:'#f5891f', ballSplash:'1', ballXHit:'1', ballTrail:'1', ballTrailLen:'200', cursor:'line', lineColor:'', lineWidth:'3', kara:'1', karaColor:'#d9480f', ballFx:'fire', fall:'none', season:'', font:''};
   const themeCue=()=>getComputedStyle(document.documentElement).getPropertyValue('--cue').trim()||'#d62828';
   let lineAuto=true;
   const bget=k=>{ try{ return localStorage.getItem('vt_'+k); }catch(e){ return null; } };
@@ -1123,6 +1136,7 @@ const SC=(()=>{
     KARA = (vals.kara||BDEF.kara)==='1';
     BFX = vals.ballFx==='ice' ? 'ice' : 'fire';
     FALL.set(vals.fall||'none');
+    useFont(vals.font||'');
     document.querySelector('#scPanel .kopt').classList.toggle('off',!KARA);
     BTRAIL = (vals.ballTrail||BDEF.ballTrail)==='1';
     BSPLASH = (vals.ballSplash||BDEF.ballSplash)==='1';
@@ -1157,27 +1171,42 @@ const SC=(()=>{
      手调过的写 #cfg=<和出厂值不同的项，JSON → base64url>；全是出厂值就不带。
      打开时链接里带了就按链接的来，并存进本机（之后从目录点别的歌也是这个样子） */
   const DEFS=()=>Object.assign({},SC_DEF,BDEF);
+  /* 字体：都是 jsDelivr 上按 unicode-range 切好片的网页字体，浏览器只下这首歌用到的那几十个字（几十 KB）。
+     选了才加载；没网或加载失败就落回后面的系统字体，不会空白 */
+  const FONTS={
+    kai:  {css:'https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/lxgwwenkaiscreen.css', fam:"'LXGW WenKai Screen',KaiTi,STKaiti,'Kaiti SC',serif"},
+    song: {css:'https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5.2.9/400.css', fam:"'Noto Serif SC','Songti SC',STSong,SimSun,serif"},
+    brush:{css:'https://cdn.jsdelivr.net/npm/@fontsource/ma-shan-zheng@5.2.9/400.css', fam:"'Ma Shan Zheng',KaiTi,STKaiti,cursive"},
+    fun:  {css:'https://cdn.jsdelivr.net/npm/@fontsource/zcool-kuaile@5.2.7/400.css', fam:"'ZCOOL KuaiLe','PingFang SC',sans-serif"}};
+  function useFont(f){
+    const F=FONTS[f], P=$('paper'), B=$('fall');
+    if(!F){ P.classList.remove('vfont'); B.classList.remove('vfont'); P.style.removeProperty('--vfont'); B.style.removeProperty('--vfont'); return; }
+    if(!document.getElementById('vf-'+f)){ const l=document.createElement('link'); l.id='vf-'+f; l.rel='stylesheet'; l.href=F.css; document.head.appendChild(l); }
+    P.classList.add('vfont'); B.classList.add('vfont'); P.style.setProperty('--vfont',F.fam); B.style.setProperty('--vfont',F.fam);
+  }
   /* 当前行底色浓度：底色和竖线色都和某套皮肤一致时，用那套的 rowTint（夏天 20%），否则 6.5% */
   function tintOf(v){ const lc=(v.lineColor||'').toLowerCase();
     for(const id in SKINS){ const k=SKINS[id]; if(k.rowTint && k.bg===(v.bg||'').toLowerCase() && k.lineColor===lc) return k.rowTint; }
     return 6.5; }
   function shareTag(v){
-    if(v.season==='auto') return 'skin=auto';
-    for(const id in SKINS){ const k=SKINS[id]; if(Object.keys(k).every(f=>f==='name' || f==='rowTint' || (v[f]||'').toLowerCase()===k[f])) return 'skin='+id; }
+    const ft=v.font ? '&font='+v.font : '';
+    if(v.season==='auto') return 'skin=auto'+ft;
+    for(const id in SKINS){ const k=SKINS[id]; if(Object.keys(k).every(f=>f==='name' || f==='rowTint' || (v[f]||'').toLowerCase()===k[f])) return 'skin='+id+ft; }
     const D=DEFS(), o={}; for(const k in D) if(k!=='season' && (v[k]||'')!==(D[k]||'')) o[k]=v[k];
     if(!Object.keys(o).length) return '';
     return 'cfg='+btoa(JSON.stringify(o)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   }
   function shareHash(v){
-    const t=shareTag(v), h=(location.hash||'').replace(/^#/,'').split('&').filter(x=>x && !/^(skin|cfg)=/.test(x));
+    const t=shareTag(v), h=(location.hash||'').replace(/^#/,'').split('&').filter(x=>x && !/^(skin|cfg|font)=/.test(x));
     if(t) h.push(t);
     const nh=h.length ? '#'+h.join('&') : '';
     if(nh!==location.hash) try{ history.replaceState(history.state,'',location.pathname+location.search+nh); }catch(e){}
   }
   function fromHash(){
-    const h=location.hash||'', ms=h.match(/[#&]skin=(\w+)/), mc=h.match(/[#&]cfg=([\w-]+)/);
-    if(ms){ if(ms[1]==='auto') return Object.assign(DEFS(),SKINS.spring,{season:'auto'});
-            if(SKINS[ms[1]]) return Object.assign(DEFS(),SKINS[ms[1]],{season:''}); }
+    const h=location.hash||'', ms=h.match(/[#&]skin=(\w+)/), mc=h.match(/[#&]cfg=([\w-]+)/), mf=h.match(/[#&]font=(\w+)/);
+    const font=mf && FONTS[mf[1]] ? mf[1] : '';
+    if(ms){ if(ms[1]==='auto') return Object.assign(DEFS(),SKINS.spring,{season:'auto',font});
+            if(SKINS[ms[1]]) return Object.assign(DEFS(),SKINS[ms[1]],{season:'',font}); }
     if(mc) try{ return Object.assign(DEFS(),JSON.parse(atob(mc[1].replace(/-/g,'+').replace(/_/g,'/'))),{season:''}); }catch(e){}
     return null;
   }
@@ -1218,9 +1247,9 @@ const SC=(()=>{
   $('kOn').onchange=commit; $('kColor').oninput=commit;
   $('lColor').oninput=()=>{ lineAuto=false; commit(); }; $('lWidth').oninput=commit;
   $('lAuto').onclick=e=>{ e.preventDefault(); lineAuto=true; commit(); $('lColor').value=themeCue(); };
-  document.querySelectorAll('input[name=bMode],input[name=bFx],input[name=fall]').forEach(e=>e.onchange=commit);
+  document.querySelectorAll('input[name=bMode],input[name=bFx],input[name=fall],input[name=font]').forEach(e=>e.onchange=commit);
   for(const k in SC_DEF){
-    const r=el('div','scr'); r.appendChild(el('span',null,SC_LAB[k]));
+    const r=el('div','scr'+(SC_GAP[k]?' gap':'')); r.appendChild(el('span',null,SC_LAB[k]));
     const i=document.createElement('input'); i.type='color'; i.setAttribute('aria-label',SC_LAB[k]); i.oninput=()=>commit();
     inp[k]=i; r.appendChild(i); rows.appendChild(r); }
   const cur=()=>{ const o={}; for(const k in SC_DEF) o[k]=inp[k].value;
@@ -1229,14 +1258,16 @@ const SC=(()=>{
     o.lineColor=lineAuto?'':$('lColor').value; o.lineWidth=$('lWidth').value;
     o.kara=$('kOn').checked?'1':'0'; o.karaColor=$('kColor').value;
     o.ballFx=(document.querySelector('input[name=bFx]:checked')||{}).value||'fire';
-    o.fall=(document.querySelector('input[name=fall]:checked')||{}).value||'none'; return o; };
+    o.fall=(document.querySelector('input[name=fall]:checked')||{}).value||'none';
+    o.font=(document.querySelector('input[name=font]:checked')||{}).value||''; return o; };
   const fill=vals=>{ for(const k in SC_DEF) inp[k].value=vals[k];
     $('bColor').value=vals.ballColor; $('bTrail').checked=vals.ballTrail==='1'; $('bSplash').checked=vals.ballSplash==='1'; $('bXHit').checked=vals.ballXHit==='1'; $('bTrailLen').value=vals.ballTrailLen;
     document.querySelectorAll('input[name=bMode]').forEach(e=>e.checked=(e.value===vals.cursor));
     lineAuto=!vals.lineColor; $('lColor').value=vals.lineColor||themeCue(); $('lWidth').value=vals.lineWidth;
     $('kOn').checked=vals.kara==='1'; $('kColor').value=vals.karaColor;
     document.querySelectorAll('input[name=bFx]').forEach(e=>e.checked=(e.value===vals.ballFx));
-    document.querySelectorAll('input[name=fall]').forEach(e=>e.checked=(e.value===vals.fall)); };
+    document.querySelectorAll('input[name=fall]').forEach(e=>e.checked=(e.value===vals.fall));
+    document.querySelectorAll('input[name=font]').forEach(e=>e.checked=(e.value===(vals.font||''))); };
   const open=on=>{ panel.hidden=!on; gear.setAttribute('aria-expanded',String(on)); };
   /* 只有左上角 ✕ 和右下角「确定」能关（用户：之前移开鼠标 / 点空白自动关，误关太多）。
      齿轮只负责打开，再点一次也不关；切到曲库页由 show() 收起 */
