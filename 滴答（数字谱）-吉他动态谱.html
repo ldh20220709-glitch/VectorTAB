@@ -503,7 +503,8 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
 #count{position:absolute;inset:0;display:grid;place-items:center;z-index:7;pointer-events:none;background:var(--scrim)}
 #count span{font-family:var(--num);font-size:clamp(72px,22vw,170px);font-weight:700;color:var(--accent);
             font-variant-numeric:tabular-nums;line-height:1}
-#flash{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:7;pointer-events:none;background:var(--cue);
+/* 段落提示（前奏 / 第 2 遍 / 谱终）放在谱面区底部居中：原来在顶部，数字谱的歌名也在顶部正中，正好被它压住 */
+#flash{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:7;pointer-events:none;background:var(--cue);
        color:#fff;font-size:13px;font-weight:600;padding:7px 15px;border-radius:999px;opacity:0;transition:opacity .25s}
 #flash.on{opacity:1}
 @media (max-width:470px){ #dock{gap:8px 9px;padding-inline:10px} .sec{padding-inline:10px} }
@@ -1771,89 +1772,70 @@ function ballPaint(){
   ballAt(ball, b.x, b.y, b.R, b.sx, b.sy); ball.style.opacity=b.o;
   trailPaint(b);
 }
-/* 火球（参考用户给的卡通火球图）：三层扁平火焰，外层最长最红，内层短而黄，
-   每层是「前半个圆 + 后面几条火舌」的封闭形状，在局部坐标里画（+x = 尾巴方向），整组旋转过去。
-   尾巴方向 = 逆着速度 + 往上（火往上蹿）：飞得快时拖在身后，落地几乎不动时竖起来往上烧。
-   方向逐帧缓动，抛物线顶点速度掉头时不会抽一下。火舌长度和尖头每帧按正弦摆，像在烧。
-   长度上限 = BTLEN/80 个球径（滑块 1~5，默认 2.5），飞得越快越接近上限。只在播放时出现 */
-/* 球特效的 SVG 结构（火球 / 冰球共用一套形状和滤镜，只换颜色）。
-   火球：照用户第二张参考图——球被火包住，细火舌往上蹿，边缘被噪声扭得参差、发光，四周飞火星。
-   冰球（冬季皮肤，用户：「冬天就是冰球，看起来很冷的样子」）：同样的形状换成淡蓝白、半透明、更糊，
-   方向朝下（寒气往下沉，像干冰），速度放慢，火星换成白色雪粒。
-   结构：外层 <g> 只管平移+旋转；里面 glow 光晕 → 加扰动滤镜的主体（底圈 + 外/中/内三层）→ 粒子 */
+/* 球特效（火球 / 冰球）（2026-10-29 重做，用户：「小球的火焰看着不自然」）。
+   之前那版是「三条火舌路径 + 噪声扰动滤镜」，出来是一团橙色色块、里面糊斑、舌尖像疙瘩；
+   中间试过纯粒子火（十几二十颗光斑往上飘），球只有 10px 大，粒子分辨不出火形，像一簇小点 / 彗星，也否了。
+   现在：**连续的火身 + 少量飘出的小火苗**。
+   火身 = 一条包住球的水滴形轮廓（圆端套在球上、往 +x 收成尖），三层嵌套：外层橙红最长、中层橙黄、内层白黄最短；
+   每层沿长度方向一条渐变（根部实、尖端透），尖端按低频正弦左右甩（越往尖幅度越大、内层相位滞后），
+   长度和宽度各自小幅闪烁；整组轻微高斯模糊让边缘发软、外面一圈柔光。
+   火苗 = 几颗小光斑从火身中上段脱出来往上飘、变小、由橙转红淡出；火星照旧。
+   方向逻辑（只看水平速度、重度平滑、永远朝上）不变。冰球同一套形状换调色板：寒气往下沉、飘得慢、更糊。
+   局部坐标 +x = 火焰方向，原点 = 球心。 */
+const FPN=8;   /* 飘出的小火苗数 */
 function fxDefs(mode){
-  const BC='var(--ball,#f5891f)', ice=mode==='ice';
+  const BC='var(--ball,#f5891f)', ice=mode==='ice', mix=(p,c)=>'color-mix(in srgb,'+BC+' '+p+'%,'+c+')';
   const st=(o,c,a)=>'<stop offset="'+o+'" style="stop-color:'+c+(a==null?'':';stop-opacity:'+a)+'"/>';
   const lg=(id,...ss)=>'<linearGradient id="'+id+'" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="40" y2="0">'+ss.join('')+'</linearGradient>';
+  const rg=(id,...ss)=>'<radialGradient id="'+id+'">'+ss.join('')+'</radialGradient>';
   const P= ice ? {
-      /* 背景本身就是淡蓝白，寒气要比它深一档才看得见：外层冰蓝、中层淡蓝、芯白 */
       O:[st(0,'#bfe5fb',.95),st(.45,'#7fc4ee',.7),st(1,'#4f9fd6',0)],
       M:[st(0,'#f2fbff',.95),st(.5,'#b6e0f8',.7),st(1,'#8ccbf0',0)],
       I:[st(0,'#ffffff',.95),st(.55,'#f4fbff',.7),st(1,'#dff3ff',0)],
-      G:[st(0,'#86c8f5',.55),st(1,'#5fb2ec',0)], ring:'#bfe5fb', spk:'#ffffff'
+      G:[st(0,'#86c8f5',.5),st(1,'#5fb2ec',0)],
+      F:[[st(0,'#f4fbff'),st(.45,'#bfe5fb',.8),st(1,'#9fd4f5',0)],
+         [st(0,'#bfe5fb',.95),st(.45,'#7fc4ee',.7),st(1,'#5fb2ec',0)],
+         [st(0,'#8ccbf0',.85),st(.45,'#4f9fd6',.55),st(1,'#3d8fc6',0)]], spk:'#ffffff'
     } : {
-      O:[st(0,'color-mix(in srgb,'+BC+' 35%,#ffb52e)'),st(.45,'color-mix(in srgb,'+BC+' 55%,#ff7a1a)',.92),st(1,'color-mix(in srgb,'+BC+' 40%,#c8200a)',.05)],
-      M:[st(0,'#fff1a8'),st(.5,'color-mix(in srgb,'+BC+' 25%,#ffc23a)',.9),st(1,'color-mix(in srgb,'+BC+' 50%,#ff8a1f)',0)],
-      I:[st(0,'#fffef4'),st(.55,'#fff3b0',.85),st(1,'#ffd54a',0)],
-      G:[st(0,'color-mix(in srgb,'+BC+' 40%,#ffb02e)',.55),st(1,'color-mix(in srgb,'+BC+' 40%,#ff6a00)',0)],
-      ring:'color-mix(in srgb,'+BC+' 50%,#ff6a12)', spk:'#ffd866' };
-  return '<defs>'+lg('fgO',...P.O)+lg('fgM',...P.M)+lg('fgI',...P.I)
-    +'<radialGradient id="fgG">'+P.G.join('')+'</radialGradient>'
-    /* 扰动：两份同样的噪声，沿火焰方向错开半个周期往前滚，按三角权重交替淡入淡出——
-       噪声一直往前流，又不会在周期回绕时跳一下 */
-    +'<filter id="ffx" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">'
-      +'<feTurbulence type="fractalNoise" baseFrequency="0.11 0.06" numOctaves="2" seed="7" result="n"/>'
-      +'<feColorMatrix in="n" type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 1" result="na"/>'
-      +'<feOffset in="na" dx="0" result="n1"/><feOffset in="na" dx="0" result="n2"/>'
-      +'<feComposite in="n1" in2="n2" operator="arithmetic" k1="0" k2="1" k3="0" k4="0" result="nm"/>'
-      +'<feDisplacementMap in="SourceGraphic" in2="nm" scale="8" xChannelSelector="R" yChannelSelector="G" result="d"/>'
-      +'<feGaussianBlur in="d" stdDeviation="1.2" result="b"/>'
-      +'<feMerge><feMergeNode in="b"/><feMergeNode in="d"/></feMerge></filter>'
-    +'</defs><g><circle fill="url(#fgG)"/><g filter="url(#ffx)">'
-    +'<circle style="fill:'+P.ring+'"'+(ice?' opacity=".7"':'')+'/>'
-    +'<path fill="url(#fgO)"/><path fill="url(#fgM)"/><path fill="url(#fgI)"/></g>'
+      O:[st(0,mix(35,'#ffb52e'),.97),st(.4,mix(55,'#ff7a1a'),.92),st(.8,mix(45,'#d8300c'),.6),st(1,'#8a1606',0)],
+      M:[st(0,'#fff1a8'),st(.5,mix(25,'#ffc23a'),.92),st(1,mix(50,'#ff8a1f'),0)],
+      I:[st(0,'#fffef4'),st(.55,'#fff3b0',.88),st(1,'#ffd54a',0)],
+      G:[st(0,mix(40,'#ffb02e'),.5),st(1,mix(40,'#ff6a00'),0)],
+      F:[[st(0,'#ffd34a'),st(.45,mix(30,'#ff9a1a'),.92),st(1,mix(40,'#ff7a12'),0)],
+         [st(0,mix(50,'#ff7a12'),.95),st(.45,mix(55,'#e8481a'),.8),st(1,mix(45,'#c22a0a'),0)],
+         [st(0,mix(40,'#c93a12'),.85),st(.5,mix(35,'#8e1c08'),.55),st(1,'#5a0e04',0)]], spk:'#ffd866' };
+  return '<defs>'+lg('fgO',...P.O)+lg('fgM',...P.M)+lg('fgI',...P.I)+rg('fgG',...P.G)+P.F.map((g,i)=>rg('fp'+i,...g)).join('')
+    +'<filter id="ffx" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1"/></filter>'
+    +'</defs><g><circle fill="url(#fgG)"/>'
+    +'<g filter="url(#ffx)"><path fill="url(#fgO)"/><path fill="url(#fgM)"/><path fill="url(#fgI)"/></g>'
+    +'<g>'+'<circle/>'.repeat(FPN)+'</g>'
     +'<g'+(ice?' style="filter:drop-shadow(0 0 1px rgba(40,100,160,.8))"':'')+'>'+('<circle style="fill:'+P.spk+'"/>').repeat(10)+'</g></g>';
 }
-/* 写实火球（用户第二张参考图，2026-10-28）：之前的卡通火舌一路被否（股数多、晃太快、贴球、
-   不贴球的 S 形「越改越丑」）。现在照参考图：球被火包住，几条细火舌从球的上半圈长出来往上蹿，
-   每条有自己的伸缩和 S 形摆动；参差的火焰边缘靠 SVG 噪声扰动滤镜（往上流），外面一圈柔光，四周火星。
-   局部坐标 +x = 火焰方向（朝上 / 左上），原点 = 球心。 */
-/* 火舌：根部角度°、相对长度（局部 +y = 火焰朝上时的屏幕右侧）。
-   试过 6 / 4 / 3 条细的。6 条细的一扭 S 就像一把须子；现在 3 条、每条加粗到 1.7 倍（FTW），
-   火身成一整团又看得出各条在扭——对过 6 细 / 3×1.7 / 3×2.1，2.1 倍就糊成一坨了 */
-const FT=[[-38,0.75],[0,1],[36,0.8]], FTW=1.7, FT1=[[0,1]];
-const FTN=10;
-function fireTongues(R,L,t,wk,lk,T){
-  const f=v=>v.toFixed(1); let d='';
-  T.forEach(([deg,len],i)=>{
-    const th=deg*Math.PI/180, ox=Math.cos(th), oy=Math.sin(th),
-          Li=L*len*lk*(0.78+0.22*Math.sin(t*(2.3+i*0.37)+i*1.9)),
-          ph=i*0.55, w0=R*0.52*FTW*wk*(0.75+0.25*len);
-    /* 往外张只走固定的 ~1.3R 就拐向 +x：火焰的宽度不随长度变，拉长只是往上长（用户：不能等比例放大） */
-    let x=ox*R*0.7, y=oy*R*0.7; const Lp=[], Rp=[];
-    for(let j=0;j<=FTN;j++){
-      const u=j/FTN, sb=Math.min(1,Li*u/(R*1.3)), dx=ox*(1-sb)+sb, dy=oy*(1-sb), dn=Math.hypot(dx,dy)||1;
-      if(j){ x+=dx/dn*Li/FTN; y+=dy/dn*Li/FTN; }
-      /* S 形摆：沿舌身一个整波长（2π），根部不动、往尖幅度变大、相位滞后 → 整条扭成 S 往上甩。
-         几条火舌相位只差一点（ph），一起扭，S 才看得出来（各扭各的会互相抵消成一团）。
-         幅度 = 0.7R + 0.12×长度：拉长时 S 跟着变大，但根部宽度不变。原来 0.45R、1.5π，用户嫌「弯曲不够、不是 S 形」 */
-      const yy=y+(R*0.7+Li*0.12)*Math.pow(u,1.1)*Math.sin(t*2.6-u*Math.PI*2+ph);
-      const w=w0*Math.pow(1-u,0.7);   /* 收得慢一点：火舌肚子饱满，不是一根根细须 */
-      Lp.push([x-dy/dn*w, yy+dx/dn*w]); Rp.push([x+dy/dn*w, yy-dx/dn*w]);
-    }
-    const Q=Lp.concat(Rp.reverse()), m=(p,q)=>[(p[0]+q[0])/2,(p[1]+q[1])/2], s0=m(Q[Q.length-1],Q[0]);
-    d+='M'+f(s0[0])+','+f(s0[1]);
-    for(let k=0;k<Q.length;k++){ const q=Q[k], nm=m(q,Q[(k+1)%Q.length]); d+='Q'+f(q[0])+','+f(q[1])+' '+f(nm[0])+','+f(nm[1]); }
-    d+='Z';
-  });
-  return d;
+/* 火身轮廓：圆端半径 W0 套在球上（圆心 = 球心），身子从 x=0 到 x=L 收尖。
+   半宽 w(u)=W0·(1-u)^0.6（圆肩、慢慢收尖）再乘小幅宽度闪烁；中轴 c(u) 按 u^1.4 放大的正弦左右甩（根部不动、尖端甩得最大）。
+   点列：后半圈（-90° 经 180° 到 90°）→ 右侧 u 0→1 → 左侧 u 1→0，经中点的二次曲线连成闭合光滑形 */
+const FLN=14;
+function flameBody(R,L,t,W0,ph){
+  const f=v=>v.toFixed(1), Q=[];
+  for(let a=-90;a>=-270;a-=30){ const th=a*Math.PI/180; Q.push([W0*Math.cos(th),W0*Math.sin(th)]); }
+  const A=R*0.4+L*0.12, Rt=[], Lt=[];
+  for(let j=0;j<=FLN;j++){ const u=j/FLN, x=L*u,
+      w=W0*Math.pow(1-u,0.6)*(1+0.1*Math.sin(t*7.1+u*6+ph)),
+      c=A*Math.pow(u,1.4)*Math.sin(t*2.8-u*3.5+ph);
+    Rt.push([x,c+w]); Lt.push([x,c-w]); }
+  Q.push(...Rt, ...Lt.reverse());
+  const m=(p,q)=>[(p[0]+q[0])/2,(p[1]+q[1])/2], s0=m(Q[Q.length-1],Q[0]);
+  let d='M'+f(s0[0])+','+f(s0[1]);
+  for(let k=0;k<Q.length;k++){ const q=Q[k], nm=m(q,Q[(k+1)%Q.length]); d+='Q'+f(q[0])+','+f(q[1])+' '+f(nm[0])+','+f(nm[1]); }
+  return d+'Z';
 }
 let fKey='';
 /* 火焰朝向（用户纠正过的「致命错误」：火焰跟着球的运动方向转）。
    火永远往上烧，球往右走只让它往左上斜——只看**水平**速度（上下弹跳不算），
-   而且用 0.6 秒时间常数重度平滑，所以朝向几乎不变，变化的只是火舌在飘。
+   而且用 0.6 秒时间常数重度平滑，所以朝向几乎不变，变化的只是火在飘。
    停下（暂停、谱终前）水平速度衰减到 0，火就竖直朝上照样烧；暂停时自己起一个 rAF 让它继续飘。 */
 let fVx=0, fT=0, fRaf=0;
+const FPS=[...Array(FPN)].map((_,k)=>({ life:0.55+0.4*((k*37)%10)/10, ph:(k*0.618)%1, y0:Math.sin(k*2.39)*0.5, s1:k*1.7 }));
 function trailPaint(b){
   if(!trail) return;
   const on=BTRAIL && !REDUCE;
@@ -1873,34 +1855,27 @@ function trailPaint(b){
   /* 火往上蹿；冰球的寒气往下沉（干冰那样），往左后方拖 */
   const ang=(ice ? Math.atan2(Math.cos(lean)*0.8, Math.sin(lean)*1.3) : Math.atan2(-Math.cos(lean), Math.sin(lean)))*180/Math.PI;
   const L=R*1.7*BTLEN/80*(0.85+0.15*Math.min(1,Math.abs(fVx)/(R*10)));
-  const g=trail.lastChild, glow=g.children[0], fg=g.children[1], spk=g.children[2].children;
-  const Ln=L*(0.9+0.1*Math.sin(t*1.7));
-  /* 滤镜区域、渐变长度、扰动幅度只在尺寸变了时改 */
-  const key=Math.round(R*2)+'_'+Math.round(L)+BFX;
+  const g=trail.lastChild, glow=g.children[0], fg=g.children[1].children, fp=g.children[2].children, spk=g.children[3].children;
   const tt=ice ? t*0.5 : t;   /* 寒气飘得慢 */
+  /* 滤镜区域、模糊量、渐变长度、光晕只在尺寸变了时改 */
+  const key=Math.round(R*2)+'_'+Math.round(L)+BFX;
   if(key!==fKey){ fKey=key;
-    const P=R*4, F=trail.querySelector('#ffx');
-    F.setAttribute('x',-R*2.6-P); F.setAttribute('y',-R*2.6-L*0.5); F.setAttribute('width',L*1.25+R*5.2+P); F.setAttribute('height',R*5.2+L);
-    F.querySelector('feDisplacementMap').setAttribute('scale',(R*0.9).toFixed(1));   /* 1.5R 会把细尖撕成须 */
-    /* 噪声波长按球径定：沿火焰方向（局部 x）约 4.5R、横向约 2.8R。
-       原来写死 0.11/0.06（沿火焰才 ~9px 一个波），火边抖成细碎的锯齿，用户嫌「波长太短」 */
-    F.querySelector('feTurbulence').setAttribute('baseFrequency',(0.22/R).toFixed(4)+' '+(0.36/R).toFixed(4));
-    F.querySelector('feGaussianBlur').setAttribute('stdDeviation',(R*(ice?0.32:0.16)).toFixed(2));
-    ['fgO','fgM','fgI'].forEach((id,k)=>trail.querySelector('#'+id).setAttribute('x2',(L*[1,0.72,0.5][k]).toFixed(1)));
-    glow.setAttribute('r',(R*2.3).toFixed(1)); glow.setAttribute('cx',(R*0.5).toFixed(1));
-    fg.children[0].setAttribute('r',(R*1.1).toFixed(1));
-    trail._P=P;
+    const F=trail.querySelector('#ffx');
+    F.setAttribute('x',-R*2.5); F.setAttribute('y',-R*3); F.setAttribute('width',L*1.3+R*5); F.setAttribute('height',R*6);
+    F.firstChild.setAttribute('stdDeviation',(R*(ice?0.22:0.11)).toFixed(2));
+    ['fgO','fgM','fgI'].forEach((id,k)=>trail.querySelector('#'+id).setAttribute('x2',(L*[1,0.7,0.42][k]).toFixed(1)));
+    glow.setAttribute('r',(R*2.2).toFixed(1)); glow.setAttribute('cx',(R*0.5).toFixed(1));
   }
-  /* 噪声往火焰方向流：两份错开半周期，三角权重交替 */
-  const P=trail._P, ph=(tt*R*3.2)%P, ph2=(ph+P/2)%P, wA=1-Math.abs(ph/P*2-1);
-  const fo=trail.querySelectorAll('#ffx feOffset'), fc=trail.querySelector('#ffx feComposite');
-  fo[0].setAttribute('dx',ph.toFixed(1)); fo[1].setAttribute('dx',ph2.toFixed(1));
-  fc.setAttribute('k2',wA.toFixed(3)); fc.setAttribute('k3',(1-wA).toFixed(3));
-  /* 只有外层分 3 股；中层、内层各是一整块芯（单股、居中、更宽）——
-     原来三层各 3 股、各自扭，叠出来是 9 根细须（用户：「怎么还是须须的感觉」） */
-  fg.children[1].setAttribute('d',fireTongues(R,Ln,tt,1,1,FT));
-  fg.children[2].setAttribute('d',fireTongues(R,Ln,tt,1.15,0.7,FT1));
-  fg.children[3].setAttribute('d',fireTongues(R,Ln,tt,0.7,0.45,FT1));
+  /* 三层火身：长度各自闪烁（低频 + 高频），内层比外层相位滞后，看起来是里面的火追着外面的火在甩 */
+  [[1,1.1,0],[0.7,0.8,0.5],[0.42,0.5,1.0]].forEach(([lk,wk,ph],k)=>{
+    const Lk=L*lk*(0.86+0.1*Math.sin(tt*4.7+ph)+0.05*Math.sin(tt*11.3+ph*2));
+    fg[k].setAttribute('d',flameBody(R,Lk,tt,R*wk,ph)); });
+  /* 小火苗：从火身中上段（0.5L）脱出来升到 1.3L，变小、橙 → 红、淡出 */
+  for(let k=0;k<FPN;k++){ const q=FPS[k], p=((tt+q.ph*q.life)/q.life)%1, c=fp[k];
+    const x=L*(0.5+0.8*p), y=R*(q.y0*(1-0.5*p)+p*0.6*Math.sin(tt*3.1+q.s1)),
+          r=R*(0.42*(1-p)+0.08), o=(p<0.1 ? p/0.1 : Math.pow(1-p,1.4))*(ice?0.85:1), st=p<0.3?0:p<0.65?1:2;
+    c.setAttribute('cx',x.toFixed(1)); c.setAttribute('cy',y.toFixed(1)); c.setAttribute('r',r.toFixed(2));
+    c.style.opacity=o.toFixed(3); if(c._st!==st){ c._st=st; c.setAttribute('fill','url(#fp'+st+')'); } }
   /* 火星：10 颗，各自循环寿命，沿火焰方向飞出、横向飘、变小淡出 */
   for(let k=0;k<spk.length;k++){
     const life=(ice?2:0.9)+0.35*((k*37)%10)/10, p=((t+k*0.61)/life)%1, sd=k*2.39,
