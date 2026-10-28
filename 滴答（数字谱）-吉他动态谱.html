@@ -196,13 +196,13 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #fall .gd{position:absolute;left:0;top:0;will-change:transform,opacity}
 #fall .gd svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;transform-origin:50% 100%;
   filter:drop-shadow(0 1.4px 1.3px rgba(8,45,75,.32))}
-/* 拖尾：水珠尖上跟一小截，向上变细变淡（用户点名喜欢这版）。
-   不许「平滑缩回再伸长」：卡住时保持不动；窜一次长一截、越拉越细，拉过头就断开，上半截留在玻璃上珠化成小水点。
-   试过的两种都被否了：①随「窜/卡」伸缩——停下缩回再窜又伸长，用户说是 bug；
-   ②留在玻璃上的长湿痕——变成一条贯穿的直线，用户说不如短拖尾好看 */
-#fall .gk{position:absolute;left:0;top:0;will-change:transform,opacity;transform-origin:50% 100%;border-radius:50% 50% 40% 40%/90% 90% 10% 10%;
-  background:linear-gradient(to top,rgba(225,242,252,.6),rgba(150,200,230,.3) 50%,rgba(150,200,230,0));
-  box-shadow:inset .8px 0 .8px rgba(8,55,90,.16),inset -.8px 0 .8px rgba(8,55,90,.1)}
+/* 尾迹：水珠滑过时一段一段留在玻璃上的湿痕——断续（不是一条贯穿的线），每段顺着当时的走向歪，
+   合起来就是一条弯的、断断续续的水痕；几秒后从两边往中间干掉。水珠自己身上只带一小截固定的根。
+   被否掉的做法别再走：①挂在水珠尖上「窜一次长一截、拉过头断开」——是一条直线；②随窜/卡伸缩——像 bug；
+   ③留一条长湿痕——贯穿的直线 */
+#fall .gt{position:absolute;left:0;top:0;will-change:transform,opacity;transform-origin:50% 0;border-radius:999px;
+  background:linear-gradient(to right,rgba(8,55,90,.2),rgba(225,242,252,.6) 38%,rgba(225,242,252,.6) 62%,rgba(8,55,90,.16));
+  box-shadow:0 0 .7px rgba(8,45,75,.28)}
 #fall .gd i{position:absolute;left:50%;bottom:62%;transform-origin:50% 100%;border-radius:50% 50% 40% 40%/90% 90% 10% 10%;
   background:linear-gradient(to top,rgba(225,242,252,.75),rgba(150,200,230,.35) 45%,rgba(150,200,230,0));
   box-shadow:inset .8px 0 .8px rgba(8,55,90,.18),inset -.8px 0 .8px rgba(8,55,90,.12)}
@@ -1011,19 +1011,6 @@ const FALL=(()=>{
     todo.forEach(([L,vb])=>{ if(vb){ L.sv.setAttribute('viewBox',vb); L.w.classList.add('on'); } else L.w.classList.remove('on'); });
     lraf=requestAnimationFrame(lensTick);
   }
-  /* 拉断的那一截：留在玻璃上原地收缩（变短、两头往中间缩），沿着原来的位置珠化成 1~3 颗小水点，再干掉 */
-  function snap(cx, by, w, L, rot, dl, op){
-    if(L<4) return;
-    const g=gel('fp gk', cx-w/2, by-L, w, L); g.style.opacity='0';
-    const tr=`translate(${(cx-w/2).toFixed(1)}px,${(by-L).toFixed(1)}px) rotate(${rot.toFixed(1)}deg)`, du=R(380,700);
-    gone(g, g.animate([{transform:tr+' scale(1,1)',opacity:op},
-                       {transform:tr+` scale(${R(1,1.3).toFixed(2)},${R(0.25,0.5).toFixed(2)})`,opacity:op*0.7,offset:.55},
-                       {transform:tr+' scale(1.2,.1)',opacity:0}],{duration:du,delay:dl,easing:'ease-out'}));   /* 不能 fill:backwards：那样断开之前它就以不透明的样子提前挂在水珠前方（实测）*/
-    const n=1+(Math.random()*3|0);
-    for(let k=0;k<n;k++){ const bz=R(1.8,Math.min(4.5,w*1.4+1)), u=R(0.15,0.85), life=R(1800,3800);
-      const b=gel('fp gb', cx-bz/2+R(-1.5,1.5), by-L*u, bz, bz*1.1); b.style.opacity='0';
-      gone(b, b.animate([{opacity:0},{opacity:1,offset:.08},{opacity:1,offset:.65},{opacity:0}],{duration:life,delay:dl+du*0.4,fill:'backwards'})); }
-  }
   function drop(){
     const W=box.clientWidth, H=box.clientHeight; if(kind!=='rain' || !W || !H || gAlive>=7) return;   /* 夏天时排好的定时器，换季后不许再冒水珠 */
     gAlive++;
@@ -1032,8 +1019,8 @@ const FALL=(()=>{
     const rz=Math.random(), z=rz<0.4 ? R(5,9) : rz<0.8 ? R(10,16) : R(18,30);
     const h=z*1.45, x=R(10,W-z-4), y=R(-10,H*0.55), slide=z>10.5 && Math.random()<0.85;
     const d=gel('fp gd',x,y,z,h); d.innerHTML=DROP;
-    /* 每颗水珠的拖尾个性都不一样：长短、粗细、浓淡、略歪的角度、多长会被拉断 */
-    const tw=z*R(0.24,0.42), tl=z*R(2,3.6), rot=R(-5,5), brk=R(1.15,1.9), tail=el('i');
+    /* 水珠尖上一小截固定的根（开始滑才长出来，不再越拉越长）；尾迹本身留在玻璃上，见下面 trail */
+    const tw=z*R(0.2,0.32), tl=z*R(0.5,0.9), rot=R(-5,5), tail=el('i');
     tail.style.width=tw+'px'; tail.style.marginLeft=(-tw/2)+'px'; tail.style.height=tl+'px';
     tail.style.opacity=R(0.6,1).toFixed(2); tail.style.transform='scaleY(0)'; d.appendChild(tail);
     const sv=d.firstChild, appear=R(300,500), sit=R(800,2600);
@@ -1045,20 +1032,26 @@ const FALL=(()=>{
         {transform:`translate(${x}px,${y}px) scale(.6)`,opacity:0}],{duration:life}), ()=>gAlive--);
       return;
     }
-    /* 粘滞-滑动：随机交替「窜」和「卡」 */
-    const D=H-y+20, pts=[[0,0,0,0]]; let t=0, yy=0, xx=0;
-    /* 大颗走得慢（用户：好欣赏放大效果）：窜的那段拉长时间、窜得短一些，卡住时也不全停，
-       而是一点点往下蹭，放大镜就能慢慢扫过字。实测最大颗约 30px/s，中颗还是原来那种快窜 */
-    const wt=Math.min(1,(z-10)/20);   /* 0 = 刚够滑的中颗，1 = 最大颗 */
+    /* 粘滞-滑动：随机交替「窜」和「卡」。
+       路径是弯的：横向沿一条随机的正弦慢慢摆（再加一点点整体偏），窜的那段切成 ~12px 的小步，折线走出来就是曲线。
+       越滑越小：水都留在身后的尾迹里了，所以步子也越窜越短（质量轻了）。
+       大颗走得慢（用户：好欣赏放大效果）：窜的那段拉长时间、窜得短一些，卡住时也不全停，
+       而是一点点往下蹭，放大镜就能慢慢扫过字。 */
+    const D=H-y+20, wt=Math.min(1,(z-10)/20);   /* wt：0 = 刚够滑的中颗，1 = 最大颗 */
+    const shrink=R(0.4,0.55)*(1-0.3*wt), sAt=yv=>1-shrink*Math.min(1,yv/D);   /* 到底时剩 45%~60%，大颗剩得多 */
+    const amp=z*R(0.5,1.0), lam=R(35,85), ph=R(0,6.28), drift=R(-0.03,0.03),
+          xAt=yv=>Math.max(6-x, Math.min(W-z-6-x, amp*(Math.sin(yv/lam+ph)-Math.sin(ph))+drift*yv));
+    const pts=[[0,0,0,0]], segs=[]; let t=0, yy=0;
     while(yy<D){ const fast=Math.random()<0.5;
-      t+=fast?R(160,340)*(1+1.6*wt):R(250,900)*(1+0.3*wt);
-      yy=Math.min(D, yy+(fast?R(30,90)*(1-0.4*wt):R(0,5)+wt*R(3,9)));
-      if(fast) xx=Math.max(-3,Math.min(3, xx+R(-2,2)));
-      pts.push([t,yy,xx,fast?1:0]); }
+      if(fast){ const len=Math.min(D-yy, R(30,90)*(1-0.4*wt)*(0.5+0.5*sAt(yy))), dur=R(160,340)*(1+1.6*wt), n=Math.max(1,Math.round(len/12));
+        for(let k=1;k<=n;k++){ const y0=yy+len*(k-1)/n, y1=yy+len*k/n, t1=t+dur*k/n;
+          segs.push([t+dur*(k-1)/n, t1, y0, y1]); pts.push([t1,y1,xAt(y1),1]); }
+        t+=dur; yy+=len; }
+      else { t+=R(250,900)*(1+0.3*wt); yy=Math.min(D, yy+R(0,5)+wt*R(3,9)); pts.push([t,yy,xAt(yy),0]); } }
     const pre=appear+sit, tot=pre+t, off=tt=>(pre+tt)/tot;
     const fr=[{transform:`translate(${x}px,${y}px) scale(0)`,opacity:0},
               {transform:`translate(${x}px,${y}px) scale(1)`,opacity:1,offset:appear/tot}];
-    pts.forEach(([tt,yv,xv])=>fr.push({transform:`translate(${(x+xv).toFixed(1)}px,${(y+yv).toFixed(1)}px) scale(${(1-0.2*yv/D).toFixed(3)})`,
+    pts.forEach(([tt,yv,xv])=>fr.push({transform:`translate(${(x+xv).toFixed(1)}px,${(y+yv).toFixed(1)}px) scale(${sAt(yv).toFixed(3)})`,
                                        opacity:1, offset:off(tt)}));
     const ln=lensOn(d, z);
     gone(d, d.animate(fr,{duration:tot,easing:'linear'}), ()=>{ gAlive--; lensOff(ln); });
@@ -1066,22 +1059,31 @@ const FALL=(()=>{
     const sk=[{transform:'scale(1,1)',offset:0},{transform:'scale(1,1)',offset:pre/tot}];
     pts.slice(1).forEach(([tt,,,f])=>sk.push({transform:f?'scale(.9,1.14)':'scale(1,1)',offset:off(tt)}));
     sv.animate(sk,{duration:tot,easing:'ease-out'});
-    /* 拖尾：窜一次长一截、越拉越细；拉过头（brk 倍）就「啪」地断开——
-       上半截留在玻璃上缩成几颗小水珠，水珠身上只剩一小截根，再接着长。卡住时保持不动，不回缩 */
-    const TF=(sy)=>`rotate(${rot.toFixed(1)}deg) scale(${Math.min(1,Math.max(0.45,1/Math.sqrt(Math.max(sy,0.01)))).toFixed(3)},${sy.toFixed(3)})`;
-    const tk=[{transform:TF(0),offset:0},{transform:TF(0),offset:pre/tot}];
-    let sy=0;
-    pts.forEach(([tt,yv,xv,f],i)=>{ if(!i) return;
-      const o=off(tt);
-      if(f){ sy+= (yv-pts[i-1][1])/tl*R(0.35,0.7); }
-      if(sy>brk){   /* 断：这一帧先长到断点，同一时刻跌回一小截根 */
-        tk.push({transform:TF(sy),offset:o});
-        const sy0=R(0.08,0.2); tk.push({transform:TF(sy0),offset:o});
-        snap(x+xv+z/2, y+yv+h*0.38, tw*Math.min(1,Math.max(0.45,1/Math.sqrt(sy))), tl*sy, rot, pre+tt, +tail.style.opacity);
-        sy=sy0; return; }
-      tk.push({transform:TF(sy),offset:o}); });
-    tk.push({transform:TF(sy),offset:1});
-    tail.animate(tk,{duration:tot,easing:'linear'});
+    /* 根：一开始滑就长出来，之后不动（它在水珠里，跟着水珠一起变小） */
+    tail.animate([{transform:`rotate(${rot}deg) scaleY(0)`},{transform:`rotate(${rot}deg) scaleY(0)`,offset:pre/tot},
+                  {transform:`rotate(${rot}deg) scaleY(1)`,offset:Math.min(1,off(pts[1][0]))},{transform:`rotate(${rot}deg) scaleY(1)`}],
+                 {duration:tot,easing:'linear'});
+    /* 尾迹：每窜一小步，按七成概率在玻璃上留一段湿痕（所以是断续的），段的两端各随机缩一点，留出缝；
+       段顺着这一步的方向歪，连起来就是弯的。宽度跟着水珠当时的大小走，越到后面越细。
+       水珠经过的那一刻才出现，停留一两秒后从两边往中间干掉。没留痕的地方偶尔留一颗小水点 */
+    const tipY=yv=>y+yv+h/2-0.12*h*sAt(yv), top=+tail.style.opacity;   /* 根的根部 = 尾迹起点 */
+    segs.forEach(([t0,t1,y0,y1])=>{
+      const x0=x+z/2+xAt(y0), x1=x+z/2+xAt(y1), py0=tipY(y0), py1=tipY(y1), dx=x1-x0, dy=py1-py0, L=Math.hypot(dx,dy);
+      if(L<2) return;
+      if(Math.random()>0.72){   /* 这一步不留痕；偶尔珠化成一颗小水点 */
+        if(Math.random()<0.25){ const bz=R(2,3.5)*sAt(y0), u=R(0,1), life=R(1800,3500);
+          const b=gel('fp gb', x0+dx*u-bz/2, py0+dy*u, bz, bz*1.1); b.style.opacity='0';
+          gone(b, b.animate([{opacity:0},{opacity:1,offset:.06},{opacity:1,offset:.6},{opacity:0}],{duration:life,delay:pre+t0+(t1-t0)*u,fill:'backwards'})); }
+        return; }
+      const u0=R(0,0.3), u1=R(0.65,1), w=tw*sAt(y0)*R(0.75,1.05), Ls=L*(u1-u0), th=Math.atan2(-dx,dy)*180/Math.PI;
+      const g=gel('fp gt', x0+dx*u0-w/2, py0+dy*u0, w, Ls); g.style.opacity='0';
+      const tr=`translate(${(x0+dx*u0-w/2).toFixed(1)}px,${(py0+dy*u0).toFixed(1)}px) rotate(${th.toFixed(1)}deg)`;
+      const hold=R(1200,3200), dry=R(1500,3200), life=120+hold+dry, op=top*R(0.7,1);
+      gone(g, g.animate([{transform:tr+' scale(1,1)',opacity:0},
+                         {transform:tr+' scale(1,1)',opacity:op,offset:120/life},
+                         {transform:tr+' scale(1,1)',opacity:op,offset:(120+hold)/life},
+                         {transform:tr+' scale(.3,.92)',opacity:0}],{duration:life,delay:pre+t0+(t1-t0)*u0,fill:'backwards'}));
+    });
     /* 卡住过的地方留一颗小水点 */
     pts.forEach(([tt,yv,xv],i)=>{ if(i===0 || i===pts.length-1 || pts[i][1]-pts[i-1][1]>5 || Math.random()<0.5) return;
       const bz=R(2.5,4.5), bx=x+xv+(z-bz)/2+R(-1,1), by=y+yv+R(0,z*0.3), life=R(2500,4500), dl=pre+tt;
