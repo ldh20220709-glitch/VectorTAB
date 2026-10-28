@@ -994,7 +994,7 @@ const FALL=(()=>{
       gone(b, b.animate([{opacity:0},{opacity:1,offset:.08},{opacity:1,offset:.65},{opacity:0}],{duration:life,delay:dl+du*0.4,fill:'backwards'})); }
   }
   function drop(){
-    const W=box.clientWidth, H=box.clientHeight; if(!W || !H || gAlive>=7) return;
+    const W=box.clientWidth, H=box.clientHeight; if(kind!=='rain' || !W || !H || gAlive>=7) return;   /* 夏天时排好的定时器，换季后不许再冒水珠 */
     gAlive++;
     /* 大小要拉开档次（用户：「大小过于雷同」）：四成小水点（不滑）、四成中等、两成大颗。
        越大越重：窜得越勤、一次窜得越远 */
