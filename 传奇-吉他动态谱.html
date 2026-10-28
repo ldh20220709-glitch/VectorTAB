@@ -1091,18 +1091,18 @@ const SKINS={
   /* 春：用户嫌「绿得不够明显」——底色换成看得出的嫩绿，文字/谱线都走绿，行高亮也是绿；桃粉只留给和弦名、小球、唱到的字 */
   spring:{name:'春', bg:'#d4efbf',title:'#13501f',text:'#2f6b35',jianpu:'#0f3d18',lyric:'#145c24',tab:'#123a1a',
           chordname:'#c81a5c',chorddiagram:'#1f5a2a',house:'#2e8b2e', ballColor:'#ff5c97',karaColor:'#c8155a',lineColor:'#2e9e3a',
-          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'220',kara:'1',lineWidth:'3',ballFx:'fire',fall:'petal'},
+          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'220',kara:'1',lineWidth:'3',ballFx:'fire',fall:'petal', rowTint:20},
   summer:{name:'夏', bg:'#c6ecf3',title:'#043a52',text:'#1f5d74',jianpu:'#032f42',lyric:'#044a63',tab:'#06303f',
           chordname:'#cc4600',chorddiagram:'#0d4a5c',house:'#008f9e', ballColor:'#ffab00',karaColor:'#c73d00',lineColor:'#0097a7',
           cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'320',kara:'1',lineWidth:'3',ballFx:'fire',fall:'rain', rowTint:20},
   autumn:{name:'秋', bg:'#f5dcae',title:'#4a1e04',text:'#6e3f15',jianpu:'#331503',lyric:'#5a2306',tab:'#331503',
           chordname:'#c42a08',chorddiagram:'#4f2c10',house:'#9a5a00', ballColor:'#ff6a13',karaColor:'#b8250a',lineColor:'#c8460f',
-          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'240',kara:'1',lineWidth:'3',ballFx:'fire',fall:'leaf'},
+          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'240',kara:'1',lineWidth:'3',ballFx:'fire',fall:'leaf', rowTint:20},
   /* 冬：用户嫌原来的淡蓝白「不像冬天、和夏天太接近」→ 改成雪夜：深蓝夜色底、谱面冰白、和弦名冰蓝，
      白雪和冰球在深底上才显得冷；四季轮换时秋→冬就像天一点点黑下来 */
   winter:{name:'冬', bg:'#17263b',title:'#f2f7ff',text:'#9fb3cc',jianpu:'#e9f1fb',lyric:'#dbe7f5',tab:'#c9d8ea',
           chordname:'#7cc8ff',chorddiagram:'#a9bcd4',house:'#8fb3dc', ballColor:'#bfe8ff',karaColor:'#7fd0ff',lineColor:'#8fd0ff',
-          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'160',kara:'1',lineWidth:'3',ballFx:'ice',fall:'snow'}};
+          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'160',kara:'1',lineWidth:'3',ballFx:'ice',fall:'snow', rowTint:20}};
 const SC=(()=>{
   const gear=$('scGear'), panel=$('scPanel'), rows=$('scRows'), inp={};
   const get=k=>{ try{ return localStorage.getItem('score_'+k); }catch(e){ return null; } };
