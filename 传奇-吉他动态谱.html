@@ -1018,9 +1018,12 @@ const FALL=(()=>{
     }
     /* 粘滞-滑动：随机交替「窜」和「卡」 */
     const D=H-y+20, pts=[[0,0,0,0]]; let t=0, yy=0, xx=0;
+    /* 大颗走得慢（用户：好欣赏放大效果）：窜的那段拉长时间、窜得短一些，卡住时也不全停，
+       而是一点点往下蹭，放大镜就能慢慢扫过字。实测最大颗约 30px/s，中颗还是原来那种快窜 */
     const wt=Math.min(1,(z-10)/20);   /* 0 = 刚够滑的中颗，1 = 最大颗 */
-    while(yy<D){ const fast=Math.random()<0.5+0.25*wt;
-      t+=fast?R(160,340):R(250,900)*(1-0.5*wt); yy=Math.min(D, yy+(fast?R(30,90)*(1+0.8*wt):R(0,5)));
+    while(yy<D){ const fast=Math.random()<0.5;
+      t+=fast?R(160,340)*(1+1.6*wt):R(250,900)*(1+0.3*wt);
+      yy=Math.min(D, yy+(fast?R(30,90)*(1-0.4*wt):R(0,5)+wt*R(3,9)));
       if(fast) xx=Math.max(-3,Math.min(3, xx+R(-2,2)));
       pts.push([t,yy,xx,fast?1:0]); }
     const pre=appear+sit, tot=pre+t, off=tt=>(pre+tt)/tot;
