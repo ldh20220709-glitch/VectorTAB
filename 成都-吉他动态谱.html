@@ -363,8 +363,10 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
    结果弹完最后一小节谱面还在往上爬，底下全是空的。
    follow() 本来就会把 want 夹在 scrollHeight-clientHeight 以内，
    把这截空白去掉，滚动自然停在「末行 + 谱终」都看得见的位置。 */
-#eof{padding:26px 0 28px;text-align:center;font-family:var(--num);font-size:13px;letter-spacing:.16em;
+/* 谱尾：用户说「谱终两个字不需要，是人就知道谱终了」→ 换成版权信息。id 仍叫 eof（selftest 靠它判断滚到底） */
+#eof{padding:22px 16px 26px;text-align:center;font-size:12px;line-height:1.7;letter-spacing:.04em;
      color:var(--muted);background:var(--ground)}
+#eof b{font-weight:600;color:var(--ink);letter-spacing:.06em}
 #stage.ribbon{overflow:hidden}
 #stage.ribbon #paper{position:absolute;top:50%;left:0;width:auto;max-width:none;display:flex;
      flex-wrap:nowrap;row-gap:0;align-items:flex-start;padding:0;box-shadow:none;will-change:transform}
@@ -563,7 +565,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
   <!-- ================= 演奏 ================= -->
   <section class="view" id="playView" hidden>
     <div id="wrapP">
-      <div id="stage"><div id="paper"></div><div id="eof">谱终</div></div>
+      <div id="stage"><div id="paper"></div><div id="eof">© 2026 <b>VectorTAB · 维特动态吉他谱</b><br>曲谱版权归原作者所有 · 仅供个人练习交流</div></div>
       <div id="line"></div>
       <div id="fall" aria-hidden="true"></div>
       <div id="count" hidden><span>3</span></div>
