@@ -269,6 +269,11 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #scPanel .scr.off,#scPanel .seg.off{opacity:.4;pointer-events:none}
 #scRows .scr.gap{margin-top:12px}
 #scPanel .seg.falls label{font-size:11.5px}
+#scPanel .floc{margin:-3px 0 10px}
+#scPanel .floc input{width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink)}
+#scPanel .floc .fmeta{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:4px;font-size:11.5px;color:var(--muted);min-height:16px}
+#scPanel .floc .fmeta .bad{color:#c62828}
+#scPanel .floc button.lnk{font:inherit;font-size:11.5px;color:var(--accent);background:none;border:0;padding:0;cursor:pointer;white-space:nowrap}
 /* 图片谱：只有竖线这一组有意义，谱面配色/小球都藏起来 */
 #scPanel.img .vonly{display:none}
 #scPanel.img .lsec h3.sub{margin-top:0;padding-top:0;border-top:0}
@@ -546,6 +551,12 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
         <label style="font-family:'Noto Serif SC',Songti SC,STSong,serif"><input type="radio" name="font" value="song">宋体</label>
         <label style="font-family:'Ma Shan Zheng',cursive"><input type="radio" name="font" value="brush">毛笔</label>
         <label style="font-family:'ZCOOL KuaiLe',cursive"><input type="radio" name="font" value="fun">卡通</label>
+        <label><input type="radio" name="font" value="local">本机</label>
+      </div>
+      <div class="floc" hidden>
+        <input type="text" id="fName" list="fList" placeholder="输入或选择字体名，如 华文行楷" aria-label="本机字体名" autocomplete="off" spellcheck="false">
+        <datalist id="fList"></datalist>
+        <div class="fmeta"><span id="fHint"></span><button type="button" class="lnk" id="fScan" hidden>列出本机字体</button></div>
       </div>
       <h3 class="sub">歌词</h3>
       <div class="scr"><span>卡拉 OK</span><input type="checkbox" id="kOn" aria-label="卡拉 OK"></div>
@@ -1178,7 +1189,43 @@ const SC=(()=>{
     song: {css:'https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5.2.9/400.css', fam:"'Noto Serif SC','Songti SC',STSong,SimSun,serif"},
     brush:{css:'https://cdn.jsdelivr.net/npm/@fontsource/ma-shan-zheng@5.2.9/400.css', fam:"'Ma Shan Zheng',KaiTi,STKaiti,cursive"},
     fun:  {css:'https://cdn.jsdelivr.net/npm/@fontsource/zcool-kuaile@5.2.7/400.css', fam:"'ZCOOL KuaiLe','PingFang SC',sans-serif"}};
+  /* 本机字体（font = 'local:<字体名>'）：直接按名字用，装了就生效。
+     Chrome/Edge 电脑版有 queryLocalFonts，可以列出本机已装字体给用户挑（要用户点按钮 + 同意授权）；
+     其他浏览器只能手输，下拉里给一批 Windows / Mac 常见中文字体当提示。
+     有没有装：用 canvas 量同一串字在「这个字体 + 两种不同兜底」下的宽度，跟纯兜底一样 = 没装 */
+  const LOCAL_SUGGEST=['微软雅黑','黑体','宋体','仿宋','楷体','等线','华文行楷','华文隶书','华文新魏','华文彩云','华文琥珀',
+    '方正舒体','方正姚体','幼圆','隶书','苹方-简','冬青黑体简体中文','华文楷体','翩翩体-简','手札体-简','兰亭黑-简','魏碑-简','行楷-简','隶变-简','圆体-简'];
+  let fScanned=false;
+  function hasFont(name){
+    try{ const c=document.createElement('canvas').getContext('2d'), t='滴答時针mwi永12';
+      return ['monospace','serif'].some(fb=>{ c.font='32px '+fb; const w0=c.measureText(t).width;
+        c.font='32px "'+name.replace(/"/g,'')+'",'+fb; return Math.abs(c.measureText(t).width-w0)>0.5; });
+    }catch(e){ return true; } }
+  function locUI(f){
+    const loc=f.startsWith('local:'), name=loc ? f.slice(6) : '';
+    document.querySelector('#scPanel .floc').hidden=!(loc || (document.querySelector('input[name=font]:checked')||{}).value==='local');
+    if(!document.querySelector('#scPanel .floc').hidden) suggest();
+    $('fScan').hidden=!('queryLocalFonts' in window) || fScanned;
+    const h=$('fHint');
+    if(!name){ h.textContent='朋友的电脑没装这个字体时，会显示默认字体'; h.className=''; return; }
+    if(hasFont(name)){ h.textContent='✓ 本机有「'+name+'」'; h.className=''; }
+    else { h.textContent='本机没有「'+name+'」，现在显示的是默认字体'; h.className='bad'; }
+  }
+  /* 候选只列这台电脑真装了的（第一次展开「本机」时才量，免得一打开页面就跑 25 次 canvas） */
+  let fSug=false;
+  function suggest(){ if(fSug || fScanned) return; fSug=true;
+    LOCAL_SUGGEST.filter(hasFont).forEach(n=>{ const o=document.createElement('option'); o.value=n; $('fList').appendChild(o); }); }
+  $('fScan').onclick=async()=>{
+    try{ const fs=await window.queryLocalFonts(), seen=new Set(), L=$('fList'); L.innerHTML='';
+      fs.forEach(f=>{ if(seen.has(f.family)) return; seen.add(f.family); const o=document.createElement('option'); o.value=f.family; L.appendChild(o); });
+      fScanned=true; $('fScan').hidden=true; $('fHint').textContent='已列出本机 '+seen.size+' 个字体，点输入框挑'; $('fHint').className='';
+      $('fName').focus();
+    }catch(e){ $('fHint').textContent='没拿到授权，可以直接输入字体名'; $('fHint').className='bad'; } };
+  let fT=0; $('fName').oninput=()=>{ clearTimeout(fT); fT=setTimeout(commit,250); };
   function useFont(f){
+    locUI(f||'');
+    if((f||'').startsWith('local:') && f.length>6){ const n=f.slice(6).replace(/["\\]/g,''), P=$('paper'), B=$('fall'), fam='"'+n+'","PingFang SC","Microsoft YaHei",sans-serif';
+      P.classList.add('vfont'); B.classList.add('vfont'); P.style.setProperty('--vfont',fam); B.style.setProperty('--vfont',fam); return; }
     const F=FONTS[f], P=$('paper'), B=$('fall');
     if(!F){ P.classList.remove('vfont'); B.classList.remove('vfont'); P.style.removeProperty('--vfont'); B.style.removeProperty('--vfont'); return; }
     if(!document.getElementById('vf-'+f)){ const l=document.createElement('link'); l.id='vf-'+f; l.rel='stylesheet'; l.href=F.css; document.head.appendChild(l); }
@@ -1189,12 +1236,12 @@ const SC=(()=>{
     for(const id in SKINS){ const k=SKINS[id]; if(k.rowTint && k.bg===(v.bg||'').toLowerCase() && k.lineColor===lc) return k.rowTint; }
     return 6.5; }
   function shareTag(v){
-    const ft=v.font ? '&font='+v.font : '';
+    const ft=v.font && v.font!=='local:' ? '&font='+encodeURIComponent(v.font) : '';
     if(v.season==='auto') return 'skin=auto'+ft;
     for(const id in SKINS){ const k=SKINS[id]; if(Object.keys(k).every(f=>f==='name' || f==='rowTint' || (v[f]||'').toLowerCase()===k[f])) return 'skin='+id+ft; }
     const D=DEFS(), o={}; for(const k in D) if(k!=='season' && (v[k]||'')!==(D[k]||'')) o[k]=v[k];
     if(!Object.keys(o).length) return '';
-    return 'cfg='+btoa(JSON.stringify(o)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    return 'cfg='+btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   }
   function shareHash(v){
     const t=shareTag(v), h=(location.hash||'').replace(/^#/,'').split('&').filter(x=>x && !/^(skin|cfg|font)=/.test(x));
@@ -1203,11 +1250,11 @@ const SC=(()=>{
     if(nh!==location.hash) try{ history.replaceState(history.state,'',location.pathname+location.search+nh); }catch(e){}
   }
   function fromHash(){
-    const h=location.hash||'', ms=h.match(/[#&]skin=(\w+)/), mc=h.match(/[#&]cfg=([\w-]+)/), mf=h.match(/[#&]font=(\w+)/);
-    const font=mf && FONTS[mf[1]] ? mf[1] : '';
+    const h=location.hash||'', ms=h.match(/[#&]skin=(\w+)/), mc=h.match(/[#&]cfg=([\w-]+)/), mf=h.match(/[#&]font=([^&]+)/);
+    let font=''; if(mf){ try{ const x=decodeURIComponent(mf[1]); if(FONTS[x] || /^local:./.test(x)) font=x; }catch(e){} }
     if(ms){ if(ms[1]==='auto') return Object.assign(DEFS(),SKINS.spring,{season:'auto',font});
             if(SKINS[ms[1]]) return Object.assign(DEFS(),SKINS[ms[1]],{season:'',font}); }
-    if(mc) try{ return Object.assign(DEFS(),JSON.parse(atob(mc[1].replace(/-/g,'+').replace(/_/g,'/'))),{season:''}); }catch(e){}
+    if(mc) try{ return Object.assign(DEFS(),JSON.parse(decodeURIComponent(escape(atob(mc[1].replace(/-/g,'+').replace(/_/g,'/'))))),{season:''}); }catch(e){}
     return null;
   }
   /* ---- 四季自动轮换：整首按播放进度四等分，春→夏→秋→冬。
@@ -1259,7 +1306,8 @@ const SC=(()=>{
     o.kara=$('kOn').checked?'1':'0'; o.karaColor=$('kColor').value;
     o.ballFx=(document.querySelector('input[name=bFx]:checked')||{}).value||'fire';
     o.fall=(document.querySelector('input[name=fall]:checked')||{}).value||'none';
-    o.font=(document.querySelector('input[name=font]:checked')||{}).value||''; return o; };
+    o.font=(document.querySelector('input[name=font]:checked')||{}).value||'';
+    if(o.font==='local'){ const n=$('fName').value.trim(); o.font=n ? 'local:'+n : 'local:'; } return o; };
   const fill=vals=>{ for(const k in SC_DEF) inp[k].value=vals[k];
     $('bColor').value=vals.ballColor; $('bTrail').checked=vals.ballTrail==='1'; $('bSplash').checked=vals.ballSplash==='1'; $('bXHit').checked=vals.ballXHit==='1'; $('bTrailLen').value=vals.ballTrailLen;
     document.querySelectorAll('input[name=bMode]').forEach(e=>e.checked=(e.value===vals.cursor));
@@ -1267,7 +1315,9 @@ const SC=(()=>{
     $('kOn').checked=vals.kara==='1'; $('kColor').value=vals.karaColor;
     document.querySelectorAll('input[name=bFx]').forEach(e=>e.checked=(e.value===vals.ballFx));
     document.querySelectorAll('input[name=fall]').forEach(e=>e.checked=(e.value===vals.fall));
-    document.querySelectorAll('input[name=font]').forEach(e=>e.checked=(e.value===(vals.font||''))); };
+    const fv=vals.font||'', fk=fv.startsWith('local:') ? 'local' : fv;
+    document.querySelectorAll('input[name=font]').forEach(e=>e.checked=(e.value===fk));
+    if(fk==='local') $('fName').value=fv.slice(6); };
   const open=on=>{ panel.hidden=!on; gear.setAttribute('aria-expanded',String(on)); };
   /* 只有左上角 ✕ 和右下角「确定」能关（用户：之前移开鼠标 / 点空白自动关，误关太多）。
      齿轮只负责打开，再点一次也不关；切到曲库页由 show() 收起 */
