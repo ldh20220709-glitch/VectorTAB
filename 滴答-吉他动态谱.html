@@ -225,7 +225,13 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #scGear{flex:0 0 auto;width:36px;height:36px;border:0;background:none;color:var(--ink);padding:0;
      cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:8px}
 #scGear svg{width:24px;height:24px;display:block;pointer-events:none;transition:transform .3s}
-#scGear[hidden]{display:none}
+#scGear[hidden],#shareBtn[hidden]{display:none}
+/* 分享：和齿轮同一套样子，放在齿轮左边 */
+#shareBtn{flex:0 0 auto;width:36px;height:36px;border:0;background:none;color:var(--ink);padding:0;
+     cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:8px}
+#shareBtn svg{width:23px;height:23px;display:block;pointer-events:none}
+#shareBtn:hover{color:var(--accent)}
+#shareBtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 #scGear:hover,#scGear[aria-expanded="true"]{color:var(--accent)}
 #scGear:hover svg{transform:rotate(30deg)}
 #scGear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -514,6 +520,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
       <button role="tab" id="tabLib"  aria-selected="true">曲库</button>
       <button role="tab" id="tabPlay" aria-selected="false">演奏</button>
     </div>
+    <button type="button" id="shareBtn" title="分享链接" aria-label="分享链接" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button>
     <button type="button" id="scGear" title="显示设置" aria-label="显示设置" aria-expanded="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     <div id="scPanel" role="dialog" aria-label="显示设置" hidden>
       <div class="scx"><button type="button" id="scX" title="关闭" aria-label="关闭设置">✕</button></div>
@@ -877,7 +884,7 @@ function show(v){
   $('tabPlay').setAttribute('aria-selected',String(v==='play'));
   if(v==='lib'){ renderLib(); $('songname').textContent=''; }
   if(v==='play'){ buildPlay(); }
-  if(v==='lib'){ $('scPanel').hidden=true; $('scGear').hidden=true; }   /* 齿轮只在演奏页 */
+  if(v==='lib'){ $('scPanel').hidden=true; $('scGear').hidden=true; $('shareBtn').hidden=true; }   /* 齿轮、分享只在演奏页 */
   else P.stop();
 }
 $('tabLib').onclick =()=>show('lib');
@@ -1353,6 +1360,7 @@ const SC=(()=>{
        同一个站点共用一份 localStorage，在数字谱里调过的竖线不能漏到图片谱上 */
     const on=!!$('paper').querySelector('svg.vec');
     gear.hidden=!on || $('playView').hidden;
+    $('shareBtn').hidden=$('playView').hidden;   /* 分享图片谱也要，不跟齿轮走 */
     panel.classList.toggle('img',!on);
     $('paper').classList.toggle('vecp',on);
     if(on){ const lk=fromHash();
@@ -2008,6 +2016,18 @@ function follow(dt){
   stage.scrollTop=sy; written=stage.scrollTop;
 }
 let fid=0;
+/* 分享：地址栏本来就带着皮肤/字体（#skin= / #cfg= / &font=），分享的就是它。
+   手机上走系统分享面板（微信、短信…），没有就复制到剪贴板；本地 file:// 打开的没网址可分享，直说 */
+$('shareBtn').onclick=async()=>{
+  if(location.protocol==='file:'){ say('本地文件没有网址，发布到网上后才能分享'); return; }
+  const url=location.href, title=(S && S.title ? S.title+' · ' : '')+'VectorTAB';
+  if(navigator.share){ try{ await navigator.share({title, url}); return; }catch(e){ if(e && e.name==='AbortError') return; } }
+  let ok=false;
+  try{ await navigator.clipboard.writeText(url); ok=true; }catch(e){
+    try{ const t=document.createElement('textarea'); t.value=url; t.setAttribute('readonly',''); t.style.position='fixed'; t.style.opacity='0';
+         document.body.appendChild(t); t.select(); ok=document.execCommand('copy'); t.remove(); }catch(e2){} }
+  say(ok ? '链接已复制，发给朋友吧' : '复制失败，请手动复制地址栏');
+};
 function say(t){ flash.textContent=t; flash.classList.add('on');
   clearTimeout(fid); fid=setTimeout(()=>flash.classList.remove('on'),1500); }
 
