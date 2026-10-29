@@ -2384,10 +2384,12 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
   window.__sheetHTML=html;
   const btn=document.getElementById('sheetBtn');
   if(btn) btn.onclick=()=>{
-    if(typeof S==='undefined' || !S || !S.sheet) return;   /* S 是顶层 let，不挂在 window 上 */
+    /* 当前曲目在主脚本的闭包里，只能从 window.__GS.song 拿 */
+    const sg=window.__GS && window.__GS.song;
+    if(!sg || !sg.sheet){ alert('这首谱没有功能谱数据（只有数字谱有）'); return; }
     const w=window.open('','_blank');
     if(!w){ alert('浏览器拦住了新窗口，请允许弹窗后再点一次'); return; }
-    w.document.open(); w.document.write(html(S.sheet,S.title)); w.document.close();
+    w.document.open(); w.document.write(html(sg.sheet,sg.title)); w.document.close();
   };
 })();
 /* SHEET-END */
