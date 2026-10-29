@@ -196,11 +196,11 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #fall .gd{position:absolute;left:0;top:0;will-change:transform,opacity}
 #fall .gd svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;transform-origin:50% 100%;
   filter:drop-shadow(0 1.4px 1.3px rgba(8,45,75,.32))}
-/* 尾迹：水珠滑过时一段一段留在玻璃上的湿痕——断续（不是一条贯穿的线），每段顺着当时的走向歪，
-   合起来就是一条弯的、断断续续的水痕；几秒后从两边往中间干掉。水珠自己身上只带一小截固定的根。
+/* 尾迹：水珠滑过时一段一段留在玻璃上的湿痕——断续（不是一条贯穿的线），整条略带弯曲（水珠本身是直着滑的，
+   弯的只是留下的水痕），停一会儿后「蒸发」：从两头往中间缩、同时变细，越来越小直到没了。水珠自己身上只带一小截固定的根。
    被否掉的做法别再走：①挂在水珠尖上「窜一次长一截、拉过头断开」——是一条直线；②随窜/卡伸缩——像 bug；
-   ③留一条长湿痕——贯穿的直线 */
-#fall .gt{position:absolute;left:0;top:0;will-change:transform,opacity;transform-origin:50% 0;border-radius:999px;
+   ③留一条长湿痕——贯穿的直线；④水珠自己走弯路——用户：「下滑的路径不要拐弯，是尾迹稍微有点拐弯」 */
+#fall .gt{position:absolute;left:0;top:0;will-change:transform,opacity;transform-origin:50% 50%;border-radius:999px;
   background:linear-gradient(to right,rgba(8,55,90,.2),rgba(225,242,252,.6) 38%,rgba(225,242,252,.6) 62%,rgba(8,55,90,.16));
   box-shadow:0 0 .7px rgba(8,45,75,.28)}
 #fall .gd i{position:absolute;left:50%;bottom:62%;transform-origin:50% 100%;border-radius:50% 50% 40% 40%/90% 90% 10% 10%;
@@ -1034,14 +1034,15 @@ const FALL=(()=>{
       return;
     }
     /* 粘滞-滑动：随机交替「窜」和「卡」。
-       路径是弯的：横向沿一条随机的正弦慢慢摆（再加一点点整体偏），窜的那段切成 ~12px 的小步，折线走出来就是曲线。
+       水珠本身**直着**往下滑（用户：路径不要拐弯）；窜的那段切成 ~12px 的小步，是为了按步留尾迹。
        越滑越小：水都留在身后的尾迹里了，所以步子也越窜越短（质量轻了）。
        大颗走得慢（用户：好欣赏放大效果）：窜的那段拉长时间、窜得短一些，卡住时也不全停，
        而是一点点往下蹭，放大镜就能慢慢扫过字。 */
     const D=H-y+20, wt=Math.min(1,(z-10)/20);   /* wt：0 = 刚够滑的中颗，1 = 最大颗 */
     const shrink=R(0.4,0.55)*(1-0.3*wt), sAt=yv=>1-shrink*Math.min(1,yv/D);   /* 到底时剩 45%~60%，大颗剩得多 */
-    const amp=z*R(0.5,1.0), lam=R(35,85), ph=R(0,6.28), drift=R(-0.03,0.03),
-          xAt=yv=>Math.max(6-x, Math.min(W-z-6-x, amp*(Math.sin(yv/lam+ph)-Math.sin(ph))+drift*yv));
+    const xAt=()=>0;   /* 水珠不拐弯 */
+    /* 尾迹的轻微弯曲：留在玻璃上的水痕沿一条幅度很小的正弦左右偏（0.15~0.3 倍球径、波长 40~90px），水珠自己不动 */
+    const mAmp=z*R(0.15,0.3), mLam=R(40,90), mPh=R(0,6.28), mAt=yv=>mAmp*Math.sin(yv/mLam+mPh);
     const pts=[[0,0,0,0]], segs=[]; let t=0, yy=0;
     while(yy<D){ const fast=Math.random()<0.5;
       if(fast){ const len=Math.min(D-yy, R(30,90)*(1-0.4*wt)*(0.5+0.5*sAt(yy))), dur=R(160,340)*(1+1.6*wt), n=Math.max(1,Math.round(len/12));
@@ -1065,25 +1066,29 @@ const FALL=(()=>{
                   {transform:`rotate(${rot}deg) scaleY(1)`,offset:Math.min(1,off(pts[1][0]))},{transform:`rotate(${rot}deg) scaleY(1)`}],
                  {duration:tot,easing:'linear'});
     /* 尾迹：每窜一小步，按七成概率在玻璃上留一段湿痕（所以是断续的），段的两端各随机缩一点，留出缝；
-       段顺着这一步的方向歪，连起来就是弯的。宽度跟着水珠当时的大小走，越到后面越细。
-       水珠经过的那一刻才出现，停留一两秒后从两边往中间干掉。没留痕的地方偶尔留一颗小水点 */
+       段的位置沿 mAt 轻微左右偏、顺着偏移的走向歪，连起来是一条略弯的水痕。宽度跟着水珠当时的大小走，越到后面越细。
+       水珠经过的那一刻才出现，停留一两秒后蒸发：绕自己中心从两头往中间缩、同时变细，缩到没了。没留痕的地方偶尔留一颗小水点，也是缩没的 */
     const tipY=yv=>y+yv+h/2-0.12*h*sAt(yv), top=+tail.style.opacity;   /* 根的根部 = 尾迹起点 */
     segs.forEach(([t0,t1,y0,y1])=>{
-      const x0=x+z/2+xAt(y0), x1=x+z/2+xAt(y1), py0=tipY(y0), py1=tipY(y1), dx=x1-x0, dy=py1-py0, L=Math.hypot(dx,dy);
+      const x0=x+z/2+mAt(y0), x1=x+z/2+mAt(y1), py0=tipY(y0), py1=tipY(y1), dx=x1-x0, dy=py1-py0, L=Math.hypot(dx,dy);
       if(L<2) return;
       if(Math.random()>0.72){   /* 这一步不留痕；偶尔珠化成一颗小水点 */
         if(Math.random()<0.25){ const bz=R(2,3.5)*sAt(y0), u=R(0,1), life=R(1800,3500);
           const b=gel('fp gb', x0+dx*u-bz/2, py0+dy*u, bz, bz*1.1); b.style.opacity='0';
-          gone(b, b.animate([{opacity:0},{opacity:1,offset:.06},{opacity:1,offset:.6},{opacity:0}],{duration:life,delay:pre+t0+(t1-t0)*u,fill:'backwards'})); }
+          const btr=`translate(${(x0+dx*u-bz/2).toFixed(1)}px,${(py0+dy*u).toFixed(1)}px)`;
+          gone(b, b.animate([{transform:btr+' scale(1)',opacity:0},{transform:btr+' scale(1)',opacity:1,offset:.06},{transform:btr+' scale(1)',opacity:1,offset:.6},
+                             {transform:btr+' scale(0)',opacity:.6}],{duration:life,delay:pre+t0+(t1-t0)*u,fill:'backwards'})); }
         return; }
-      const u0=R(0,0.3), u1=R(0.65,1), w=tw*sAt(y0)*R(0.75,1.05), Ls=L*(u1-u0), th=Math.atan2(-dx,dy)*180/Math.PI;
-      const g=gel('fp gt', x0+dx*u0-w/2, py0+dy*u0, w, Ls); g.style.opacity='0';
-      const tr=`translate(${(x0+dx*u0-w/2).toFixed(1)}px,${(py0+dy*u0).toFixed(1)}px) rotate(${th.toFixed(1)}deg)`;
-      const hold=R(1200,3200), dry=R(1500,3200), life=120+hold+dry, op=top*R(0.7,1);
+      const u0=R(0,0.3), u1=R(0.65,1), w=tw*sAt(y0)*R(0.75,1.05), Ls=L*(u1-u0), th=Math.atan2(-dx,dy)*180/Math.PI,
+            um=(u0+u1)/2, cxs=x0+dx*um, cys=py0+dy*um;   /* 段的中心：绕它旋转、绕它缩 */
+      const g=gel('fp gt', cxs-w/2, cys-Ls/2, w, Ls); g.style.opacity='0';
+      const tr=`translate(${(cxs-w/2).toFixed(1)}px,${(cys-Ls/2).toFixed(1)}px) rotate(${th.toFixed(1)}deg)`;
+      const hold=R(1000,2600), dry=R(1800,3600), life=120+hold+dry, op=top*R(0.7,1);
       gone(g, g.animate([{transform:tr+' scale(1,1)',opacity:0},
                          {transform:tr+' scale(1,1)',opacity:op,offset:120/life},
                          {transform:tr+' scale(1,1)',opacity:op,offset:(120+hold)/life},
-                         {transform:tr+' scale(.3,.92)',opacity:0}],{duration:life,delay:pre+t0+(t1-t0)*u0,fill:'backwards'}));
+                         {transform:tr+' scale(.7,.55)',opacity:op*0.85,offset:(120+hold+dry*0.5)/life},
+                         {transform:tr+' scale(.25,.12)',opacity:0}],{duration:life,delay:pre+t0+(t1-t0)*u0,fill:'backwards'}));
     });
     /* 卡住过的地方留一颗小水点 */
     pts.forEach(([tt,yv,xv],i)=>{ if(i===0 || i===pts.length-1 || pts[i][1]-pts[i-1][1]>5 || Math.random()<0.5) return;
