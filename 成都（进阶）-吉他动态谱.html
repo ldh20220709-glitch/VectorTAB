@@ -2528,7 +2528,8 @@ boot();
     /* 一小节一块，按谱面 0.72 倍（整页谱是缩到页宽≈0.52 倍，太小）横排，放不下就在小节线处折行 */
     const tabs=bx=>bx.map(b=>`<svg class="itab" viewBox="${b.join(' ')}" width="${(b[2]*0.72).toFixed(1)}" height="${(b[3]*0.72).toFixed(1)}"><use href="#scoreG"/></svg>`).join('');
     /* 间奏 solo：和前奏一样裁，放在歌词栏里原来那几行和弦的位置（solo 开着显示六线谱、关了显示和弦行） */
-    const mid=sos.map(x=>`<div class="solo s2"><div class="sec">${esc(x.sec||'间奏')}</div><div class="itabs">${tabs(x.boxes)}</div></div>`);
+    /* 标题和每个小节都是段里的直接子元素（小节 inline-block、底边对齐）：分栏拉齐时可以在间奏中间换栏 */
+    const mid=sos.map(x=>`<div class="sec s2h">${esc(x.sec||'间奏')}</div>`+tabs(x.boxes).replace(/<svg class="itab"/g,'<svg class="itab s2i"'));
     return {css, mid, defs:`<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><g id="scoreG">${inner}</g></defs></svg>`,
             body:(it&&it.boxes&&it.boxes.length)?`<div class="solo"><div class="sec">前奏</div><div class="itabs">${tabs(it.boxes)}</div></div>`:''};
   }
@@ -2580,15 +2581,14 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
 .itabs{display:flex;flex-wrap:wrap;align-items:flex-end;row-gap:6px;margin:2px 0 4px}   /* 底边（简谱底）对齐，不同谱行的小节并排时谱表也齐 */
 .itab{display:block;flex:none}       /* 框正好裁在小节线上，相邻两块各半根线，拼起来一根 */
 body:not(.nosolo) .intro.alt,body:not(.nosolo) .ln.alt{display:none}     /* 开着 solo：前奏/间奏用六线谱，和弦那行不重复印 */
-.solo.s2{margin:8px 0 2px}
-.solo.s2 .sec{margin-top:10px}
-.solo.s2 .itab{max-width:100%;height:auto}
+.itab.s2i{display:inline-block;vertical-align:bottom;max-width:100%;height:auto;margin:0 0 6px}
+body.nosolo .s2h,body.nosolo .s2i{display:none}
 body.nosolo .solo{display:none}
 .cols{display:grid;grid-template-columns:1fr;column-gap:7mm;align-items:start}
 .cols.k3{column-gap:5mm}
 .ln{margin:7px 0 0;page-break-inside:avoid;break-inside:avoid}
 .sec{font-size:11px;color:#1c6b4a;margin:10px 0 0;font-weight:600}
-.col>.seg:first-child>.ln:first-child .sec{margin-top:0}
+.col>.seg:first-child>.ln:first-child .sec,.col>.seg:first-child>.sec:first-child,.col>.seg:first-child>.solo:first-child .sec{margin-top:0}
 .toks{display:flex;flex-wrap:wrap;align-items:flex-end;row-gap:3px}
 .tk{display:inline-flex;flex-direction:column;align-items:flex-start;min-width:1em;margin-right:.12em}
 .tk i{font-style:normal;font-family:Helvetica,Arial,sans-serif;font-weight:700;font-size:11px;color:#b4530e;line-height:1.2;height:1.2em;white-space:nowrap}
@@ -2606,56 +2606,83 @@ body.nosolo .solo{display:none}
 @media print{.bar{display:none}body{background:#fff}.page{box-shadow:none;margin:0;padding:0;max-width:none}}
 ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${so?'<button id="soloBtn">关闭 solo</button>':''}<button onclick="window.close()">关闭</button><button class="p" onclick="window.print()">打印</button></div>
 <div class="page"><h1>${esc(sh.title||title)}</h1><div class="meta"><span>${esc(meta)}</span><span>${esc(sh.credits||'')}</span></div>
-<div class="chords">${chords}</div>${lines}</div><script>(${colfit.toString()})();${so?`(${soloSw.toString()})()`:''}<\/script></body></html>`;
+<div class="chords">${chords}</div>${lines}</div><script>window.colfit=${colfit.toString()};${so?`(${soloSw.toString()})()`:'window.colfit()'}<\/script></body></html>`;
   }
-  /* 在功能谱窗口里跑：按内容定 1/2/3 栏。只在段名处切栏（段不拆开）；
-     多一栏的前提：最宽一句在那个栏宽里不折行，且最高那栏比少一栏时矮 15% 以上（不为一两行去挤） */
+  /* 在功能谱窗口里跑：按内容定 1/2/3 栏；多一栏的前提：最高那栏比少一栏时矮 15% 以上（不为一两行去挤） */
   function colfit(){
+    /* 分 1/2/3 栏、栏要拉齐（用户 2026-10-30「左边栏比右边栏低很多，你要尽量拉齐」）：
+       切栏单位是「行」（一行歌词 / 一块 solo），不再只在段名处切；按实际渲染高度让最高一栏最矮，
+       同样高时优先切在段首（段中切的话新栏顶上补「段名（续）」）。solo 开关一切换高度就变，会重新调用。 */
     const box=document.getElementById('cols'); if(!box) return;
-    const segs=[...box.querySelectorAll('.seg')]; if(!segs.length) return;
-    const lineW=ln=>[...ln.querySelectorAll('.ms')].reduce((a,m)=>a+m.offsetWidth+parseFloat(getComputedStyle(m).marginRight||0),0);
-    const cellW=Math.max(0,...[...box.querySelectorAll('.ms')].map(m=>m.offsetWidth));
-    const maxW=Math.max(0,...[...box.querySelectorAll('.ln')].map(ln=>Math.max(lineW(ln),cellW*ln.querySelectorAll('.ms').length)))+4;
-    const hs=segs.map(g=>g.offsetHeight), W=box.clientWidth;
-    /* 原来强制「第 2 遍另起一栏」：成都左栏只有第 1 遍、右栏第 2 遍 + 尾段，一短一长。
-       用户 2026-10-30：「第2段放左边，尾段保留在右边」——不再强制，只在段名处切、按最高一栏最矮选 */
-    const must=-1;
+    if(!box._segs) box._segs=[...box.querySelectorAll(':scope>.seg')].map(g=>({el:g,kids:[...g.children]}));
+    const S=box._segs; if(!S.length) return;
+    box.innerHTML=''; box.style.zoom=''; box.style.width=''; box.className='cols'; box.style.gridTemplateColumns='1fr';
+    S.forEach(sg=>{ sg.kids.forEach(k=>sg.el.appendChild(k)); box.appendChild(sg.el); });
+    box.querySelectorAll('.ms').forEach(m=>{ m.style.minWidth=''; });
+    const units=[]; S.forEach((sg,si)=>sg.kids.forEach((k,j)=>units.push({el:k,si,first:j===0})));
+    const n=units.length;
+    const ms=[...box.querySelectorAll('.ln:not(.alt) .ms')];
+    const cw=Math.max(0,...ms.map(m=>m.offsetWidth));
+    const per=Math.max(1,...[...box.querySelectorAll('.ln')].map(ln=>ln.querySelectorAll('.ms').length));
+    const W=box.clientWidth;
     const gapPx=k=>{ const d=document.createElement('div'); d.style.width=(k===3?5:7)+'mm'; document.body.appendChild(d); const v=d.offsetWidth; d.remove(); return v; };
+    const colW=k=>(W-(k-1)*gapPx(k))/k;
+    /* 小节格子两格放不下就整栏等比缩（最多 0.85） */
+    const zoomOf=k=>Math.max(0.85,Math.min(1,colW(k)/(cw*per+2)));
+    /* 量高度：按 k 栏的栏宽、缩放排成一栏，P[i] = 第 i 个单元（往后第一个看得见的）顶边 */
+    const measure=(k,z)=>{
+      box.style.zoom=z; box.style.width=(colW(k)/z)+'px';
+      const P=new Array(n+1); let end=0;
+      const vis=e=>e.getClientRects().length>0;
+      units.forEach(u=>{ if(vis(u.el)){ const r=u.el.getBoundingClientRect(); end=Math.max(end,r.bottom); } });
+      P[n]=end;
+      for(let i=n-1;i>=0;i--){ const e=units[i].el; P[i]=vis(e)?Math.min(e.getBoundingClientRect().top,P[i+1]):P[i+1]; }
+      box.style.zoom=''; box.style.width='';
+      return P;
+    };
+    const SEC_PEN=24;   // 切在段中间的代价（px）：差不多高时优先段首
     let best=null;
     for(let k=1;k<=3;k++){
-      if(k>segs.length || (k===1 && must>0)) continue;
-      if(k===3 && maxW>(W-2*gapPx(3))/3) continue;   // 两栏照旧（个别长句折一行能接受），三栏才要求最宽一句放得下
-      /* 枚举 k-1 个切点（块之间），取最高一栏最矮的 */
-      const n=segs.length; let bk=null;
-      const rec=(st,left,cuts)=>{
-        if(left===0){ const all=[0,...cuts,n]; if(must>0 && !cuts.includes(must)) return;
-          const mh=Math.max(...all.slice(1).map((e,i)=>hs.slice(all[i],e).reduce((a,b)=>a+b,0)));
-          if(!bk || mh<bk.h) bk={h:mh,cuts:cuts.slice()}; return; }
-        for(let c=st;c<=n-left;c++){ cuts.push(c); rec(c+1,left-1,cuts); cuts.pop(); }
-      };
-      rec(1,k-1,[]);
-      if(bk && (!best || bk.h<best.h*0.85)) best={k,...bk};
+      if(k>n) break;
+      if(k===3 && cw*per>colW(3)) continue;      // 三栏要求两格小节不缩就放得下
+      const z=zoomOf(k), P=measure(k,z), H=(a,b)=>P[b]-P[a];
+      const pen=c=>units[c].first?0:SEC_PEN;
+      // 只切在看得见的单元前（隐藏的和弦行跟着 solo 走）；「间奏」标题不和下面第一小节分开
+      const ok=c=>units[c].el.getClientRects().length>0 && !units[c-1].el.classList.contains('s2h');
+      let bk=null;
+      if(k===1) bk={h:H(0,n),cuts:[]};
+      else if(k===2){ for(let c=1;c<n;c++){ if(!ok(c)) continue; const h=Math.max(H(0,c),H(c,n)); const v=h+pen(c); if(!bk||v<bk.v) bk={v,h,cuts:[c]}; } }
+      else { for(let c=1;c<n;c++){ if(!ok(c)) continue; for(let d=c+1;d<n;d++){ if(!ok(d)) continue;
+               const h=Math.max(H(0,c),H(c,d),H(d,n)); const v=h+pen(c)+pen(d); if(!bk||v<bk.v) bk={v,h,cuts:[c,d]}; } } }
+      if(bk && (!best || bk.h<best.h*0.85)) best={k,z,...bk};
     }
-    if(!best) best={k:must>0?2:1,cuts:must>0?[must]:[]};
-    box.className='cols k'+best.k; box.style.gridTemplateColumns=`repeat(${best.k},1fr)`;
-    const all=[0,...best.cuts,segs.length];
-    for(let i=0;i<best.k;i++){ const col=document.createElement('div'); col.className='col'; segs.slice(all[i],all[i+1]).forEach(g=>col.appendChild(g)); box.appendChild(col); }
-    /* 按小节换行（用户 2026-10-30）：同一栏里每个小节一样宽，上下小节线对齐成格子；行尾那根小节线靠到格子右边 */
-    box.querySelectorAll('.col').forEach(col=>{
-      const ms=[...col.querySelectorAll('.ms')]; if(!ms.length) return;
-      let cw=Math.max(...ms.map(m=>m.offsetWidth));
-      /* 一小节字特别多（后来「或是很沉默 这些年」8 个字）两格放不下：整栏等比缩一点（最多到 0.85），还不够就让那格自己宽 */
-      const per=Math.max(...[...col.querySelectorAll('.ln')].map(ln=>ln.querySelectorAll('.ms').length));
-      const need=cw*per+2, z=Math.max(0.85,Math.min(1,col.clientWidth/need));
-      if(z<1) col.style.zoom=z;
-      cw=Math.min(cw,Math.floor((col.clientWidth/z-2)/per));
-      ms.forEach(m=>{ m.style.minWidth=cw+'px'; });
-    });
+    if(!best) best={k:1,z:1,cuts:[]};
+    /* 排版 */
+    box.innerHTML=''; box.className='cols k'+best.k; box.style.gridTemplateColumns=`repeat(${best.k},1fr)`;
+    if(best.z<1) box.style.zoom=best.z;
+    const all=[0,...best.cuts,n];
+    for(let i=0;i<best.k;i++){
+      const col=document.createElement('div'); col.className='col'; let seg=null, si=-1;
+      for(let q=all[i];q<all[i+1];q++){
+        const u=units[q];
+        if(u.si!==si){ seg=S[u.si].el.cloneNode(false); col.appendChild(seg); si=u.si;
+          if(!u.first){ let nm=S[u.si].kids[0].querySelector('.sec');
+            /* 从间奏中间换栏：标「间奏（续）」 */
+            if(u.el.classList.contains('s2i')) for(let q2=q-1;q2>=0&&units[q2].si===u.si;q2--){ if(units[q2].el.classList.contains('s2h')){ nm=units[q2].el; break; } }
+            if(nm){ const c=document.createElement('div'); c.className='sec'; c.textContent=nm.textContent+'（续）'; seg.appendChild(c); } } }
+        seg.appendChild(u.el);
+      }
+      box.appendChild(col);
+    }
+    /* 按小节换行：每个小节格子一样宽，上下小节线对齐；行尾那根小节线靠到格子右边 */
+    const cw2=Math.min(cw,Math.floor((colW(best.k)/best.z-2)/per));
+    box.querySelectorAll('.ms').forEach(m=>{ m.style.minWidth=cw2+'px'; });
   }
   /* 右上角「显示 solo / 关闭 solo」：关了就回到只印前奏和弦那一行；记在本机（打开的是同源空白窗口，存不了就算了） */
   function soloSw(){
-    const b=document.getElementById('soloBtn'); if(!b) return;
+    const b=document.getElementById('soloBtn'); if(!b){ if(window.colfit) window.colfit(); return; }
     const set=on=>{ document.body.classList.toggle('nosolo',!on); b.textContent=on?'关闭 solo':'显示 solo'; b.classList.toggle('on',on);
+                    if(window.colfit) window.colfit();      // 开关 solo 后各栏高度变了，重新分栏拉齐
                     try{ localStorage.setItem('sheet_solo',on?'1':'0'); }catch(e){} };
     let on=true; try{ on=localStorage.getItem('sheet_solo')!=='0'; }catch(e){}
     set(on); b.onclick=()=>set(document.body.classList.contains('nosolo'));
