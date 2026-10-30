@@ -2519,15 +2519,18 @@ boot();
   }
   /* 前奏六线谱（solo）：直接用页面里嵌的矢量谱面，按 make_digital 给的框（score.svg 坐标）裁，<use> 引用同一份，不栅格化 */
   function soloHTML(sh,svgTxt){
-    const it=sh.intro_tab; if(!it||!it.boxes||!it.boxes.length||!svgTxt) return null;
+    const it=sh.intro_tab, sos=sh.solos||[];
+    if(!svgTxt || (!(it&&it.boxes&&it.boxes.length) && !sos.length)) return null;
     const doc=new DOMParser().parseFromString(svgTxt,'image/svg+xml'), root=doc.documentElement;
     if(!root||root.nodeName!=='svg') return null;
     let css=''; root.querySelectorAll('style').forEach(st=>{ css+=st.textContent; st.remove(); });
     const inner=[...root.childNodes].map(n=>new XMLSerializer().serializeToString(n)).join('');
     /* 一小节一块，按谱面 0.72 倍（整页谱是缩到页宽≈0.52 倍，太小）横排，放不下就在小节线处折行 */
-    const svgs=it.boxes.map(b=>`<svg class="itab" viewBox="${b.join(' ')}" width="${(b[2]*0.72).toFixed(1)}" height="${(b[3]*0.72).toFixed(1)}"><use href="#scoreG"/></svg>`).join('');
-    return {css, defs:`<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><g id="scoreG">${inner}</g></defs></svg>`,
-            body:`<div class="solo"><div class="sec">前奏</div><div class="itabs">${svgs}</div></div>`};
+    const tabs=bx=>bx.map(b=>`<svg class="itab" viewBox="${b.join(' ')}" width="${(b[2]*0.72).toFixed(1)}" height="${(b[3]*0.72).toFixed(1)}"><use href="#scoreG"/></svg>`).join('');
+    /* 间奏 solo：和前奏一样裁，放在歌词栏里原来那几行和弦的位置（solo 开着显示六线谱、关了显示和弦行） */
+    const mid=sos.map(x=>`<div class="solo s2"><div class="sec">${esc(x.sec||'间奏')}</div><div class="itabs">${tabs(x.boxes)}</div></div>`);
+    return {css, mid, defs:`<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><g id="scoreG">${inner}</g></defs></svg>`,
+            body:(it&&it.boxes&&it.boxes.length)?`<div class="solo"><div class="sec">前奏</div><div class="itabs">${tabs(it.boxes)}</div></div>`:''};
   }
   function html(sh,title,svgTxt){
     const so=soloHTML(sh,svgTxt);
@@ -2552,8 +2555,13 @@ boot();
        分 1/2/3 栏、在哪段切按内容定（用户 2026-10-30）：开窗后量最宽一句和每块高度，见下面 colfit() */
     const intro=(sh.intro||[]).map(line1).join('');
     const L=sh.lines||[], segs=[];
-    L.forEach((l,i)=>{ if(!segs.length || l.sec || (l.col&&!L[i-1].col)) segs.push({c:l.col?1:0,h:''}); segs[segs.length-1].h+=line1(l); });
-    const lines=`${so?so.body:''}${intro?`<div class="intro${so?' alt':''}">${intro}</div>`:''}<div class="cols" id="cols">${segs.map(g=>`<div class="seg" data-c="${g.c}">${g.h}</div>`).join('')}</div>`;
+    L.forEach((l,i)=>{ if(!segs.length || l.sec || (l.col&&!L[i-1].col)) segs.push({c:l.col?1:0,h:''});
+      const sg=segs[segs.length-1], so_=(so&&so.mid&&l.so!=null)?so.mid[l.so]:null;
+      if(!so_){ sg.h+=line1(l); return; }
+      /* 同一段间奏的几行：第一行前面放六线谱块，几行和弦都标 alt（solo 开着隐藏） */
+      if(i===0 || L[i-1].so!==l.so) sg.h+=so_;
+      sg.h+=line1(l).replace('<div class="ln','<div class="alt ln'); });
+    const lines=`${so?so.body:''}${intro?`<div class="intro${so&&so.body?' alt':''}">${intro}</div>`:''}<div class="cols" id="cols">${segs.map(g=>`<div class="seg" data-c="${g.c}">${g.h}</div>`).join('')}</div>`;
     const key=String(sh.key||'').replace(/\s/g,'').replace(/^1=/,'');
     const meta=[key?('1='+key):'', sh.sig||'', sh.capo?('变调夹：'+sh.capo):''].filter(Boolean).join('　');
     return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>${esc(sh.title||title)} 功能谱</title><style>
@@ -2569,9 +2577,12 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
 .intro{margin-bottom:4px}
 .solo{margin-bottom:6px}
 .solo .sec{margin-top:0}
-.itabs{display:flex;flex-wrap:wrap;row-gap:6px;margin:2px 0 4px}
+.itabs{display:flex;flex-wrap:wrap;align-items:flex-end;row-gap:6px;margin:2px 0 4px}   /* 底边（简谱底）对齐，不同谱行的小节并排时谱表也齐 */
 .itab{display:block;flex:none}       /* 框正好裁在小节线上，相邻两块各半根线，拼起来一根 */
-body:not(.nosolo) .intro.alt{display:none}     /* 开着 solo：前奏用六线谱，和弦那行不重复印 */
+body:not(.nosolo) .intro.alt,body:not(.nosolo) .ln.alt{display:none}     /* 开着 solo：前奏/间奏用六线谱，和弦那行不重复印 */
+.solo.s2{margin:8px 0 2px}
+.solo.s2 .sec{margin-top:10px}
+.solo.s2 .itab{max-width:100%;height:auto}
 body.nosolo .solo{display:none}
 .cols{display:grid;grid-template-columns:1fr;column-gap:7mm;align-items:start}
 .cols.k3{column-gap:5mm}
