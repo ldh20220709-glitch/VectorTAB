@@ -2517,7 +2517,20 @@ boot();
     });
     return s+'</svg>';
   }
-  function html(sh,title){
+  /* 前奏六线谱（solo）：直接用页面里嵌的矢量谱面，按 make_digital 给的框（score.svg 坐标）裁，<use> 引用同一份，不栅格化 */
+  function soloHTML(sh,svgTxt){
+    const it=sh.intro_tab; if(!it||!it.boxes||!it.boxes.length||!svgTxt) return null;
+    const doc=new DOMParser().parseFromString(svgTxt,'image/svg+xml'), root=doc.documentElement;
+    if(!root||root.nodeName!=='svg') return null;
+    let css=''; root.querySelectorAll('style').forEach(st=>{ css+=st.textContent; st.remove(); });
+    const inner=[...root.childNodes].map(n=>new XMLSerializer().serializeToString(n)).join('');
+    /* 一小节一块，按谱面 0.72 倍（整页谱是缩到页宽≈0.52 倍，太小）横排，放不下就在小节线处折行 */
+    const svgs=it.boxes.map(b=>`<svg class="itab" viewBox="${b.join(' ')}" width="${(b[2]*0.72).toFixed(1)}" height="${(b[3]*0.72).toFixed(1)}"><use href="#scoreG"/></svg>`).join('');
+    return {css, defs:`<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><g id="scoreG">${inner}</g></defs></svg>`,
+            body:`<div class="solo"><div class="sec">前奏</div><div class="itabs">${svgs}</div></div>`};
+  }
+  function html(sh,title,svgTxt){
+    const so=soloHTML(sh,svgTxt);
     const chords=(sh.chords||[]).map(diag).join('');
     const line1=l=>{
       /* 按小节分组：每组 = 小节线 + 本小节的字，整组不可拆，只在小节线处换行；行尾那根小节线并进最后一组 */
@@ -2540,7 +2553,7 @@ boot();
     const intro=(sh.intro||[]).map(line1).join('');
     const L=sh.lines||[], segs=[];
     L.forEach((l,i)=>{ if(!segs.length || l.sec || (l.col&&!L[i-1].col)) segs.push({c:l.col?1:0,h:''}); segs[segs.length-1].h+=line1(l); });
-    const lines=`${intro?`<div class="intro">${intro}</div>`:''}<div class="cols" id="cols">${segs.map(g=>`<div class="seg" data-c="${g.c}">${g.h}</div>`).join('')}</div>`;
+    const lines=`${so?so.body:''}${intro?`<div class="intro${so?' alt':''}">${intro}</div>`:''}<div class="cols" id="cols">${segs.map(g=>`<div class="seg" data-c="${g.c}">${g.h}</div>`).join('')}</div>`;
     const key=String(sh.key||'').replace(/\s/g,'').replace(/^1=/,'');
     const meta=[key?('1='+key):'', sh.sig||'', sh.capo?('变调夹：'+sh.capo):''].filter(Boolean).join('　');
     return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>${esc(sh.title||title)} 功能谱</title><style>
@@ -2554,6 +2567,12 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
 .meta{display:flex;justify-content:space-between;font-size:14px;color:#444;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:8px}
 .chords{display:flex;flex-wrap:wrap;gap:2px 8px;justify-content:center;margin:4px 0 10px}
 .intro{margin-bottom:4px}
+.solo{margin-bottom:6px}
+.solo .sec{margin-top:0}
+.itabs{display:flex;flex-wrap:wrap;row-gap:6px;margin:2px 0 4px}
+.itab{display:block;flex:none}       /* 框正好裁在小节线上，相邻两块各半根线，拼起来一根 */
+body:not(.nosolo) .intro.alt{display:none}     /* 开着 solo：前奏用六线谱，和弦那行不重复印 */
+body.nosolo .solo{display:none}
 .cols{display:grid;grid-template-columns:1fr;column-gap:7mm;align-items:start}
 .cols.k3{column-gap:5mm}
 .ln{margin:7px 0 0;page-break-inside:avoid;break-inside:avoid}
@@ -2573,9 +2592,9 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
 .tk.d b{color:#666}
 .mk{font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#1c6b4a;align-self:flex-end;line-height:1.3;margin:0 .45em 3px 0;padding:0 3px;border:1px solid #1c6b4a;border-radius:3px}
 @media print{.bar{display:none}body{background:#fff}.page{box-shadow:none;margin:0;padding:0;max-width:none}}
-</style></head><body><div class="bar"><button onclick="window.close()">关闭</button><button class="p" onclick="window.print()">打印</button></div>
+${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${so?'<button id="soloBtn">关闭 solo</button>':''}<button onclick="window.close()">关闭</button><button class="p" onclick="window.print()">打印</button></div>
 <div class="page"><h1>${esc(sh.title||title)}</h1><div class="meta"><span>${esc(meta)}</span><span>${esc(sh.credits||'')}</span></div>
-<div class="chords">${chords}</div>${lines}</div><script>(${colfit.toString()})()<\/script></body></html>`;
+<div class="chords">${chords}</div>${lines}</div><script>(${colfit.toString()})();${so?`(${soloSw.toString()})()`:''}<\/script></body></html>`;
   }
   /* 在功能谱窗口里跑：按内容定 1/2/3 栏。只在段名处切栏，第 2 遍（data-c 从 0 变 1）必须是一个切点；
      多一栏的前提：最宽一句在那个栏宽里不折行，且最高那栏比少一栏时矮 15% 以上（不为一两行去挤） */
@@ -2607,6 +2626,14 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
     const all=[0,...best.cuts,segs.length];
     for(let i=0;i<best.k;i++){ const col=document.createElement('div'); col.className='col'; segs.slice(all[i],all[i+1]).forEach(g=>col.appendChild(g)); box.appendChild(col); }
   }
+  /* 右上角「显示 solo / 关闭 solo」：关了就回到只印前奏和弦那一行；记在本机（打开的是同源空白窗口，存不了就算了） */
+  function soloSw(){
+    const b=document.getElementById('soloBtn'); if(!b) return;
+    const set=on=>{ document.body.classList.toggle('nosolo',!on); b.textContent=on?'关闭 solo':'显示 solo'; b.classList.toggle('on',on);
+                    try{ localStorage.setItem('sheet_solo',on?'1':'0'); }catch(e){} };
+    let on=true; try{ on=localStorage.getItem('sheet_solo')!=='0'; }catch(e){}
+    set(on); b.onclick=()=>set(document.body.classList.contains('nosolo'));
+  }
   window.__sheetHTML=html;
   const btn=document.getElementById('sheetBtn');
   if(btn) btn.onclick=()=>{
@@ -2615,7 +2642,14 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
     if(!sg || !sg.sheet){ alert('这首谱没有功能谱数据（只有数字谱有）'); return; }
     const w=window.open('','_blank');
     if(!w){ alert('浏览器拦住了新窗口，请允许弹窗后再点一次'); return; }
-    w.document.open(); w.document.write(html(sg.sheet,sg.title)); w.document.close();
+    /* 矢量谱面原文（solo 要裁它）：页面图是 data:image/svg+xml */
+    let svgTxt=null;
+    try{
+      const pg=(sg.pages||[])[0], u=pg && window.__BLOB ? window.__BLOB(pg.a) : '', m=/^data:image\/svg\+xml(;base64)?,/.exec(u||'');
+      if(m){ const raw=u.slice(m[0].length);
+        svgTxt=m[1] ? new TextDecoder().decode(Uint8Array.from(atob(raw),c=>c.charCodeAt(0))) : decodeURIComponent(raw); }
+    }catch(e){ svgTxt=null; }
+    w.document.open(); w.document.write(html(sg.sheet,sg.title,svgTxt)); w.document.close();
   };
 })();
 /* SHEET-END */
