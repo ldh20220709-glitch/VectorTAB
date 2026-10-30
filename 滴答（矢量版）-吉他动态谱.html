@@ -2580,7 +2580,8 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
 .solo .sec{margin-top:0}
 .itabs{display:flex;flex-wrap:wrap;align-items:flex-end;row-gap:6px;margin:2px 0 4px}   /* 底边（简谱底）对齐，不同谱行的小节并排时谱表也齐 */
 .itab{display:block;flex:none}       /* 框正好裁在小节线上，相邻两块各半根线，拼起来一根 */
-body:not(.nosolo) .intro.alt,body:not(.nosolo) .ln.alt{display:none}     /* 开着 solo：前奏/间奏用六线谱，和弦那行不重复印 */
+.intro.alt,.ln.alt{display:none}     /* 有 solo 的前奏/间奏：开着显示六线谱，关了整段不印（用户 2026-10-30「关闭solo后，那几个前奏的和弦名也一起关掉」） */
+body.nochd .chords{display:none}      /* 「关闭和弦图」：顶上那排和弦图收起 */
 .itab.s2i{display:inline-block;vertical-align:bottom;max-width:100%;height:auto;margin:0 0 6px}
 body.nosolo .s2h,body.nosolo .s2i{display:none}
 body.nosolo .solo{display:none}
@@ -2604,9 +2605,9 @@ body.nosolo .solo{display:none}
 .tk.d b{color:#666}
 .mk{font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#1c6b4a;align-self:flex-end;line-height:1.3;margin:0 .45em 3px 0;padding:0 3px;border:1px solid #1c6b4a;border-radius:3px}
 @media print{.bar{display:none}body{background:#fff}.page{box-shadow:none;margin:0;padding:0;max-width:none}}
-${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${so?'<button id="soloBtn">关闭 solo</button>':''}<button onclick="window.close()">关闭</button><button class="p" onclick="window.print()">打印</button></div>
+${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<button id="chordBtn">关闭和弦图</button>':''}${so?'<button id="soloBtn">关闭 solo</button>':''}<button onclick="window.close()">关闭</button><button class="p" onclick="window.print()">打印</button></div>
 <div class="page"><h1>${esc(sh.title||title)}</h1><div class="meta"><span>${esc(meta)}</span><span>${esc(sh.credits||'')}</span></div>
-<div class="chords">${chords}</div>${lines}</div><script>window.colfit=${colfit.toString()};${so?`(${soloSw.toString()})()`:'window.colfit()'}<\/script></body></html>`;
+<div class="chords">${chords}</div>${lines}</div><script>window.colfit=${colfit.toString()};(${chordSw.toString()})();${so?`(${soloSw.toString()})()`:'window.colfit()'}<\/script></body></html>`;
   }
   /* 在功能谱窗口里跑：按内容定 1/2/3 栏；多一栏的前提：最高那栏比少一栏时矮 15% 以上（不为一两行去挤） */
   function colfit(){
@@ -2678,7 +2679,15 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${so?'<butt
     const cw2=Math.min(cw,Math.floor((colW(best.k)/best.z-2)/per));
     box.querySelectorAll('.ms').forEach(m=>{ m.style.minWidth=cw2+'px'; });
   }
-  /* 右上角「显示 solo / 关闭 solo」：关了就回到只印前奏和弦那一行；记在本机（打开的是同源空白窗口，存不了就算了） */
+  /* 右上角「显示 solo / 关闭 solo」：关了前奏/间奏整段不印（和弦行也不留）；记在本机（打开的是同源空白窗口，存不了就算了） */
+  /* 右上角「关闭和弦图 / 打开和弦图」：收起顶上的和弦图；记在本机 */
+  function chordSw(){
+    const b=document.getElementById('chordBtn'); if(!b) return;
+    const set=on=>{ document.body.classList.toggle('nochd',!on); b.textContent=on?'关闭和弦图':'打开和弦图';
+                    try{ localStorage.setItem('sheet_chords',on?'1':'0'); }catch(e){} };
+    let on=true; try{ on=localStorage.getItem('sheet_chords')!=='0'; }catch(e){}
+    set(on); b.onclick=()=>set(document.body.classList.contains('nochd'));
+  }
   function soloSw(){
     const b=document.getElementById('soloBtn'); if(!b){ if(window.colfit) window.colfit(); return; }
     const set=on=>{ document.body.classList.toggle('nosolo',!on); b.textContent=on?'关闭 solo':'显示 solo'; b.classList.toggle('on',on);
