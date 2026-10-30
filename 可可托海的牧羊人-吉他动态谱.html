@@ -2535,10 +2535,12 @@ boot();
       const toks=groups.map(g=>`<span class="ms">${g.h}</span>`).join('');
       return `<div class="ln${l.inst?' inst':''}">${l.sec?`<div class="sec">${esc(l.sec)}</div>`:''}<div class="toks">${toks}</div></div>`;
     };
-    /* 前奏整页横排第一行；歌词按段分两栏，第 2 遍从右栏起（用户 2026-10-29「类似分栏」「前奏统一放到第一行」） */
+    /* 前奏整页横排第一行；歌词按段（段名处）切块，第 2 遍一定另起一栏（用户 2026-10-29「第一段结束之后第二段从右边开始」）。
+       分 1/2/3 栏按内容定（用户 2026-10-30）：开窗后量最宽一句和每块高度，见下面 colfit() */
     const intro=(sh.intro||[]).map(line1).join('');
-    const L=sh.lines||[], c0=L.filter(l=>!l.col).map(line1).join(''), c1=L.filter(l=>l.col).map(line1).join('');
-    const lines=`${intro?`<div class="intro">${intro}</div>`:''}<div class="cols${c1?'':' one'}"><div class="col">${c0}</div>${c1?`<div class="col">${c1}</div>`:''}</div>`;
+    const L=sh.lines||[], segs=[];
+    L.forEach((l,i)=>{ if(!segs.length || l.sec || (l.col&&!L[i-1].col)) segs.push({c:l.col?1:0,h:''}); segs[segs.length-1].h+=line1(l); });
+    const lines=`${intro?`<div class="intro">${intro}</div>`:''}<div class="cols" id="cols">${segs.map(g=>`<div class="seg" data-c="${g.c}">${g.h}</div>`).join('')}</div>`;
     const key=String(sh.key||'').replace(/\s/g,'').replace(/^1=/,'');
     const meta=[key?('1='+key):'', sh.sig||'', sh.capo?('变调夹：'+sh.capo):''].filter(Boolean).join('　');
     return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>${esc(sh.title||title)} 功能谱</title><style>
@@ -2552,11 +2554,11 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
 .meta{display:flex;justify-content:space-between;font-size:14px;color:#444;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:8px}
 .chords{display:flex;flex-wrap:wrap;gap:2px 8px;justify-content:center;margin:4px 0 10px}
 .intro{margin-bottom:4px}
-.cols{display:grid;grid-template-columns:1fr 1fr;column-gap:7mm;align-items:start}
-.cols.one{grid-template-columns:1fr}
+.cols{display:grid;grid-template-columns:1fr;column-gap:7mm;align-items:start}
+.cols.k3{column-gap:5mm}
 .ln{margin:7px 0 0;page-break-inside:avoid;break-inside:avoid}
 .sec{font-size:11px;color:#1c6b4a;margin:10px 0 0;font-weight:600}
-.ln:first-child .sec{margin-top:0}
+.col>.seg:first-child>.ln:first-child .sec{margin-top:0}
 .toks{display:flex;flex-wrap:wrap;align-items:flex-end;row-gap:3px}
 .tk{display:inline-flex;flex-direction:column;align-items:flex-start;min-width:1em;margin-right:.12em}
 .tk i{font-style:normal;font-family:Helvetica,Arial,sans-serif;font-weight:700;font-size:11px;color:#b4530e;line-height:1.2;height:1.2em;white-space:nowrap}
@@ -2573,7 +2575,37 @@ h1{margin:0 0 6px;font-size:30px;text-align:center;letter-spacing:2px}
 @media print{.bar{display:none}body{background:#fff}.page{box-shadow:none;margin:0;padding:0;max-width:none}}
 </style></head><body><div class="bar"><button onclick="window.close()">关闭</button><button class="p" onclick="window.print()">打印</button></div>
 <div class="page"><h1>${esc(sh.title||title)}</h1><div class="meta"><span>${esc(meta)}</span><span>${esc(sh.credits||'')}</span></div>
-<div class="chords">${chords}</div>${lines}</div></body></html>`;
+<div class="chords">${chords}</div>${lines}</div><script>(${colfit.toString()})()<\/script></body></html>`;
+  }
+  /* 在功能谱窗口里跑：按内容定 1/2/3 栏。只在段名处切栏，第 2 遍（data-c 从 0 变 1）必须是一个切点；
+     多一栏的前提：最宽一句在那个栏宽里不折行，且最高那栏比少一栏时矮 15% 以上（不为一两行去挤） */
+  function colfit(){
+    const box=document.getElementById('cols'); if(!box) return;
+    const segs=[...box.querySelectorAll('.seg')]; if(!segs.length) return;
+    const lineW=ln=>[...ln.querySelectorAll('.ms')].reduce((a,m)=>a+m.offsetWidth+parseFloat(getComputedStyle(m).marginRight||0),0);
+    const maxW=Math.max(0,...[...box.querySelectorAll('.ln')].map(lineW))+4;
+    const hs=segs.map(g=>g.offsetHeight), W=box.clientWidth;
+    const must=segs.findIndex(g=>g.dataset.c==='1');           // 第 2 遍起头的块；-1 = 没有
+    const gapPx=k=>{ const d=document.createElement('div'); d.style.width=(k===3?5:7)+'mm'; document.body.appendChild(d); const v=d.offsetWidth; d.remove(); return v; };
+    let best=null;
+    for(let k=1;k<=3;k++){
+      if(k>segs.length || (k===1 && must>0)) continue;
+      if(k>1 && maxW>(W-(k-1)*gapPx(k))/k) continue;
+      /* 枚举 k-1 个切点（块之间），取最高一栏最矮的 */
+      const n=segs.length; let bk=null;
+      const rec=(st,left,cuts)=>{
+        if(left===0){ const all=[0,...cuts,n]; if(must>0 && !cuts.includes(must)) return;
+          const mh=Math.max(...all.slice(1).map((e,i)=>hs.slice(all[i],e).reduce((a,b)=>a+b,0)));
+          if(!bk || mh<bk.h) bk={h:mh,cuts:cuts.slice()}; return; }
+        for(let c=st;c<=n-left;c++){ cuts.push(c); rec(c+1,left-1,cuts); cuts.pop(); }
+      };
+      rec(1,k-1,[]);
+      if(bk && (!best || bk.h<best.h*0.85)) best={k,...bk};
+    }
+    if(!best) best={k:must>0?2:1,cuts:must>0?[must]:[]};
+    box.className='cols k'+best.k; box.style.gridTemplateColumns=`repeat(${best.k},1fr)`;
+    const all=[0,...best.cuts,segs.length];
+    for(let i=0;i<best.k;i++){ const col=document.createElement('div'); col.className='col'; segs.slice(all[i],all[i+1]).forEach(g=>col.appendChild(g)); box.appendChild(col); }
   }
   window.__sheetHTML=html;
   const btn=document.getElementById('sheetBtn');
