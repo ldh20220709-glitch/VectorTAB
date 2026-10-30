@@ -235,6 +235,18 @@ function note_frac(notes, beats, tab_only, bar) {
 }
 function clef_width(sig, clef) { if (clef === undefined) clef = true; return clef ? SPC * (CLEFW + (T(sig) ? 1.9 : 0)) : 0; }
 
+function rest_sym(out, x, y, dur) {
+  const s = SPC;
+  if (dur >= 1) {
+    out.push(`<path d="M${f1(x - 0.25 * s)},${f1(y + 1.3 * s)} L${f1(x + 0.35 * s)},${f1(y + 2.1 * s)} L${f1(x - 0.2 * s)},${f1(y + 2.8 * s)} `
+      + `L${f1(x + 0.35 * s)},${f1(y + 3.5 * s)} Q${f1(x - 0.45 * s)},${f1(y + 3.3 * s)} ${f1(x + 0.05 * s)},${f1(y + 4.2 * s)}" `
+      + `fill="none" class="cs-tab" stroke-width="2.2" stroke-linejoin="round"/>`);
+  } else {
+    out.push(`<path d="M${f1(x + 0.35 * s)},${f1(y + 2.0 * s)} L${f1(x - 0.1 * s)},${f1(y + 3.6 * s)}" fill="none" class="cs-tab" stroke-width="1.6"/>`);
+    out.push(`<circle cx="${f1(x - 0.15 * s)}" cy="${f1(y + 2.1 * s)}" r="${f1(s * 0.22)}" class="cf-tab"/>`);
+  }
+}
+
 function tab_svg(row, x0, width, y, out, clef, sig) {
   if (clef === undefined) clef = true;
   const bars = row.bars;
@@ -277,13 +289,15 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
     }
     pos.forEach(([nx], i) => {
       const n = b.notes[i];
+      if (T(get(n, 'rest'))) { rest_sym(out, nx, y, n.dur); return; }
       const hs = n.hit.filter(h => !nonp(h.f)).map(h => h.s).sort((a, c) => a - c);
       let top = hs.length ? y + (hs[hs.length - 1] + STEMTOP) * SPC : y;
       if (!hs.length && n.hit.some(h => h.f === 'up' || h.f === 'down')) top = y + 5 * SPC + SPC * 0.3;
       out.push(`<line x1="${f1(nx)}" y1="${f1(top)}" x2="${f1(nx)}" y2="${f1(by)}" class="cs-tab" stroke-width="1.6"/>`);
       if (T(n.dot)) out.push(`<circle cx="${f1(nx + SPC * 0.45)}" cy="${f1(by - SPC * 0.35)}" r="${f1(SPC * 0.16)}" class="cf-tab"/>`);
-      if (hs.length >= 2 && hs[hs.length - 1] - hs[0] >= 2)
-        out.push(`<line x1="${f1(nx)}" y1="${f1(y + (hs[0] + 0.55) * SPC)}" x2="${f1(nx)}" y2="${f1(y + (hs[hs.length - 1] - 0.45) * SPC)}" class="cs-tab" stroke-width="1.6"/>`);
+      for (let q = 0; q + 1 < hs.length; q++)
+        if (hs[q + 1] - hs[q] >= 2)
+          out.push(`<line x1="${f1(nx)}" y1="${f1(y + (hs[q] + 0.55) * SPC)}" x2="${f1(nx)}" y2="${f1(y + (hs[q + 1] - 0.45) * SPC)}" class="cs-tab" stroke-width="1.6"/>`);
     });
     for (let k = 1; k < 4; k++) {
       let i0 = 0;
@@ -432,14 +446,23 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
 const CHU = 10.0;    // 和弦图弦距（2026-10-30 iPad 上太小：7.7 → 9.0 → 10.0）
 function chord_box(out, x, y, grip, name, u) {
   if (u === undefined) u = CHU;
-  const gw = u * 5, gh = gw * 0.79;
+  const gw = u * 5;
+  let gh = gw * 0.79;
   out.push(`<text x="${f1(x + gw / 2)}" y="${f1(y - u * 1.5)}" text-anchor="middle" font-size="${f1(u * 1.9)}" font-weight="700" font-family="Helvetica" class="cf-chordname">${name}</text>`);
+  // 高把位：最高品超过 3 就从最低品起画，左边标起始品位，顶线不画粗（同 draw_tab.chord_box）
+  const frs = (grip || []).filter(v => /^\d+$/.test(String(v)) && parseInt(v, 10) > 0).map(v => parseInt(v, 10));
+  const base = (frs.length && Math.max(...frs) > 3) ? Math.min(...frs) : 1;
+  const nf = Math.max(3, frs.length ? Math.max(...frs) - base + 1 : 3);
+  const fh = gh / 3;
+  gh = fh * nf;
   for (let i = 0; i < 6; i++)
     out.push(`<line x1="${f1(x + i * u)}" y1="${f1(y)}" x2="${f1(x + i * u)}" y2="${f1(y + gh)}" class="cs-chorddiagram" stroke-width="0.9"/>`);
-  for (let k = 0; k < 4; k++) {
-    const yy = y + gh * k / 3;
-    out.push(`<line x1="${f1(x)}" y1="${f1(yy)}" x2="${f1(x + gw)}" y2="${f1(yy)}" class="cs-chorddiagram" stroke-width="${k === 0 ? 2.2 : 0.9}"/>`);
+  for (let k = 0; k < nf + 1; k++) {
+    const yy = y + fh * k;
+    out.push(`<line x1="${f1(x)}" y1="${f1(yy)}" x2="${f1(x + gw)}" y2="${f1(yy)}" class="cs-chorddiagram" stroke-width="${k === 0 && base === 1 ? 2.2 : 0.9}"/>`);
   }
+  if (base > 1)
+    out.push(`<text x="${f1(x - u * 0.6)}" y="${f1(y + fh * 0.5 + u * 0.4)}" text-anchor="end" font-size="${f1(u * 1.15)}" font-family="Helvetica" class="cf-chorddiagram">${base}</text>`);
   (grip || []).forEach((v, i) => {
     const cx = x + i * u;
     if (v === 'x') {
@@ -448,7 +471,7 @@ function chord_box(out, x, y, grip, name, u) {
     } else if (v === '0') {
       out.push(`<circle cx="${f1(cx)}" cy="${f1(y - u * 0.95)}" r="${f1(u * 0.3)}" fill="none" class="cs-chorddiagram" stroke-width="1.1"/>`);
     } else {
-      out.push(`<circle cx="${f1(cx)}" cy="${f1(y + gh * (parseInt(v, 10) - 0.5) / 3)}" r="${f1(u * 0.36)}" class="cf-chorddiagram"/>`);
+      out.push(`<circle cx="${f1(cx)}" cy="${f1(y + fh * (parseInt(v, 10) - base + 0.5))}" r="${f1(u * 0.36)}" class="cf-chorddiagram"/>`);
     }
   });
 }
@@ -546,16 +569,19 @@ function render(d, tab) {
         house_bracket(out, hx0, hx1, ytop + HOUSEY, h.n);
       }
     }
+    // 和弦图不许叠：后一个往右推到前一个图右边 2 个弦距（同 draw.py）
+    let lastcx = -1e9;
+    const _cx = v => { v = Math.max(v, lastcx + CHU * 7); lastcx = v; return v; };
     bars.forEach((b, bi) => {
       const bw = avail * bar_width(b) / tot;
       const rb = sum(bars.slice(0, bi).map(q => q.beats));
       const tb = (trow && bi < trow.bars.length) ? trow.bars[bi] : b;
       if (T(b.chord)) {
         const c0 = or(b.chords, [{}])[0];
-        chord_box(out, note_x(tb, bt, bi, x, bw, Number(or(get(c0, 'at'), 0)), tonly[ri]), y + CHY, get(b, 'grip'), esc(b.chord));
+        chord_box(out, _cx(note_x(tb, bt, bi, x, bw, Number(or(get(c0, 'at'), 0)), tonly[ri])), y + CHY, get(b, 'grip'), esc(b.chord));
       }
       for (const cc of or(b.chords, []).slice(1)) {
-        const cx_ = note_x(tb, bt, bi, x, bw, Number(or(get(cc, 'at'), 0)), tonly[ri]);
+        const cx_ = _cx(note_x(tb, bt, bi, x, bw, Number(or(get(cc, 'at'), 0)), tonly[ri]));
         chord_box(out, cx_, y + CHY, get(cc, 'grip'), esc(cc.name));
       }
       let acc = 0.0; const pos = [];
@@ -3628,8 +3654,9 @@ window.__GS = {
    单曲页里的「曲库」本来只会列出这一首，从目录过来时那个列表没有意义。 */
 (function(){
   try{
-    if(!/[?&]lib=1(&|$)/.test(location.search)) return;
+    const m=/[?&]lib=([12])(&|$)/.exec(location.search); if(!m) return;
     const b=$('back'); if(!b) return;
+    if(m[1]==='2') b.setAttribute('href','images.html');   /* 从图片谱目录点进来的，回图片谱目录 */
     b.hidden=false;
     $('tabLib').onclick=()=>{ location.href=b.getAttribute('href'); };
   }catch(e){}
