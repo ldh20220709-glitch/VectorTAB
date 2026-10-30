@@ -49,7 +49,7 @@ main{padding:14px 14px 48px}
          手指还没开始动，拖拽就已经被原生手势抢走了。 */
       -webkit-touch-callout:none;
       -webkit-user-select:none;user-select:none}
-.card:hover{border-color:var(--accent)}
+@media (hover:hover){.card:hover{border-color:var(--accent)}}   /* 触屏上 :hover 会粘在最后点过的位置（iPad 点置顶后第 5 行一直描边） */
 /* 拖拽：让开的行用 transition 滑开，被拖的那行跟手走所以不能有 transition */
 .card.slide{transition:transform .16s cubic-bezier(.2,.7,.3,1)}
 .card.drag{z-index:10;border-color:var(--accent);box-shadow:var(--shadow);
@@ -77,6 +77,17 @@ body.dragging .card.drag{border-color:var(--accent)}
    交给它当 target 容易出意外 */
 .grip svg{display:block;width:20px;height:20px;pointer-events:none}
 .grip[disabled]{opacity:.25;cursor:default}
+/* 置顶（用户 2026-10-30）：和抓手同一套样子、同样 44×44 命中区；已在第一位的变灰 */
+.pin{appearance:none;background:none;border:0;flex:0 0 auto;width:44px;height:44px;margin-right:-8px;
+     display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;border-radius:8px;
+     -webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.pin:hover{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.pin:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.pin svg{display:block;width:20px;height:20px;pointer-events:none}
+.pin[disabled]{opacity:.25;cursor:default;background:none;color:var(--muted)}
+/* 刚置顶的那行闪一下，知道它去哪了 */
+@keyframes pinned{0%{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 30%,transparent)}100%{}}
+.card.pinned{animation:pinned 1.2s ease-out}
 .go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);
     font-family:var(--cjk);font-size:12px;font-weight:600;border-radius:6px;
     padding:9px 13px;flex:0 0 auto;-webkit-touch-callout:none}
@@ -279,7 +290,7 @@ function render(){
     const a=el('a','card'); a.href=s.file+'&lib=1'+(s.v?'&v='+s.v:'');   /* v＝页面内容哈希：换谱/改名后浏览器缓存（Pages 给 10 分钟）不会再顶着旧页 */
     /* <a> 默认可以被原生拖拽（拖链接），不关掉的话一按下就被浏览器接管，
        pointermove 再也不来，整行拖就是拖不动。 */
-    a.draggable=false;
+    a.draggable=false; a.dataset.id=s.id;
     a.addEventListener('dragstart', ev=>ev.preventDefault());
     a.appendChild(el('span','no',String(i+1)));
     a.appendChild(el('b','nm',s.title));
@@ -310,6 +321,22 @@ function render(){
       if(gs[j]) gs[j].focus();
     });
     g.addEventListener('click', ev=>{ ev.preventDefault(); ev.stopPropagation(); });
+
+    /* 置顶：挪到整个曲目表第一位（搜索时也能点），和拖拽一样存本机顺序 */
+    const pn=el('button','pin'); pn.type='button';
+    pn.setAttribute('aria-label','置顶'); pn.title=i===0?'已在最前':'置顶';
+    pn.innerHTML='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      +'<path d="M4 3.5h12"/><path d="M10 17V7.5"/><path d="M5.5 11.5 10 7l4.5 4.5"/></svg>';
+    pn.disabled = i===0;
+    pn.addEventListener('pointerdown', ev=>ev.stopPropagation());   /* 别让整行的鼠标拖拽接管 */
+    pn.addEventListener('click', ev=>{
+      ev.preventDefault(); ev.stopPropagation();
+      if(i===0) return;
+      reorder(i,0);
+      const c=[...document.querySelectorAll('.card')].find(x=>x.dataset.id===s.id);
+      if(c){ c.classList.add('pinned'); if(!kw) c.scrollIntoView({block:'nearest',behavior:'smooth'}); }
+    });
+    a.appendChild(pn);
     a.appendChild(g);
 
     a.appendChild(el('span','go','演奏'));
@@ -317,7 +344,7 @@ function render(){
        触摸不这么干——那样会把「划一下滚页面」变成拖行。 */
     a.addEventListener('pointerdown', ev=>{
       if(kw || ev.pointerType!=='mouse' || ev.button!==0) return;
-      if(ev.target.closest('.go,.grip')) return;
+      if(ev.target.closest('.go,.grip,.pin')) return;
       beginDrag(ev, a, i);
     });
     /* 刚拖完浏览器还会补一个 click，不拦住就会跳进那首歌 */
