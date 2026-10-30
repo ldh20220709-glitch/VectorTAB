@@ -1421,6 +1421,8 @@ let acx=null, aT=0, aPos=0, nb=0, pend=[], armed=false;
 /* 选段循环：SEL = {a,b} 演奏时间轴上的单位区间 [a,b)（小节边界）；selAnc = 按下时的那一小节；
    selEat = 这次按下是选小节，随后的 click 不许再当「点谱面 = 播放」 */
 let SEL=null, selAnc=null, selEat=false, selDirty=true;
+/* selNew：刚选好、还没播过——选的时候不动游标也不滚页面（用户：「点一下就跑了」），按播放时才跳到段首、滚过去 */
+let selNew=false;
 
 function lsg(k){ try{ return localStorage.getItem('gs.'+k); }catch(e){ return null; } }
 function lss(k,v){ try{ localStorage.setItem('gs.'+k,v); }catch(e){} }
@@ -1518,7 +1520,8 @@ function buildPlay(){
     items.forEach((o,k)=>{
       const {it,r,pg,cw,ch,sx0,gx,bb}=o;
       const row=mkStrip(r,pg,cw,ch,sx0,maxCw);
-      if(it.sec){ curSec=it.sec; row.classList.add('secstart'); row.title=it.sec; }
+      /* sec：字符串＝新段名；''＝从这儿起不显示段名（前奏后面直接开唱的那段）；null＝沿用上一个 */
+      if(it.sec!=null){ curSec=it.sec; if(it.sec){ row.classList.add('secstart'); row.title=it.sec; } }
       PL.push({beats:bb.reduce((a,b)=>a+b,0), bars:bb, gx, row:k, sx0,
                sr:it.r, b0:(it.cut0!=null?it.cut0:0),
                b1:(it.cut!=null?it.cut:r.bb.length),
@@ -1568,7 +1571,7 @@ function buildPlay(){
         const a=(i===b0 && b0===0 && r.m0!=null) ? r.m0 : r.bl[i], b2=r.bl[i+1], n=r.bb[i];
         for(let j=0;j<n;j++) gx.push((a+(b2-a)*j/n - g.sx0)/g.cw*100); }
       gx.push((r.bl[nb]-g.sx0)/g.cw*100);
-      if(it.sec) curSec=it.sec;
+      if(it.sec!=null) curSec=it.sec;
       PL.push({beats:bb.reduce((a,b2)=>a+b2,0), bars:bb, gx, row:g.idx, sx0:g.sx0,
                sr:it.r, b0:b0, b1:nb,
                cw:g.cw, ch:g.ch, sc:(r.sy0+r.sy1)/2 - r.y0});
@@ -1619,7 +1622,7 @@ function paint(){
   const a=at(pos), m=PL[a.i], r=prows[m.row];
   /* 段落提示（前奏 / 第 2 遍…）：选段循环时不报——每绕回段首一次就会报一次段首的段名，全是噪音 */
   if(a.i!==cur){ const lb=LAB[a.i]; if(lb && lb!==LAB[cur] && !SEL) say(lb); cur=a.i; }
-  where.textContent=(LAB[a.i]||'')+' · 第'+(a.i+1)+'/'+PL.length+'段'+(SEL?' · 循环 '+SEL.n+' 小节':'');
+  where.textContent=[LAB[a.i], '第'+(a.i+1)+'/'+PL.length+'段', SEL&&('循环 '+SEL.n+' 小节')].filter(Boolean).join(' · ');
   if(selDirty) selPaint();
   rem.textContent=mmss((TOT-pos)/(bpm*GRP)*60);
   beatv.textContent='♩'+(INBAR[Math.min(TOT-1,Math.floor(pos))]||'1/4');
@@ -2120,7 +2123,7 @@ function toggle(){
   }
   if(playing){ P.stop(); return; }
   /* 有选段：在段里暂停的接着放，否则回段首、给一小节预备拍再循环 */
-  if(SEL){ if(pos>SEL.a+0.01 && pos<SEL.b) P.go(); else { seek(SEL.a); countIn(); } return; }
+  if(SEL){ if(!selNew && pos>SEL.a+0.01 && pos<SEL.b) P.go(); else { selNew=false; seek(SEL.a); countIn(); } return; }
   /* 从头开始才给一小节预备拍；暂停后从中途续播直接开始，不再数拍 */
   if(pos>0.01 && pos<TOT) P.go(); else countIn();
 }
@@ -2277,7 +2280,7 @@ stage.onclick=e=>{
      按下某小节 = 选中它；按住拖到别的小节 = 一直选到那里；Shift+点 = 从已选的头接着选到这里
      右键 / Esc = 取消；选中后按播放就只循环这几小节
    整页模式下同一行可能被演奏好几遍（反复），点的是哪一遍：
-     按下时取离当前位置最近的那一遍；拖动时取锚点之后最近的那一遍（往回拖就取之前最近的） */
+     按下时一律取第 1 遍；拖动时取锚点之后最近的那一遍（往回拖就取之前最近的） */
 function barHits(e){
   const row=e.target.closest && e.target.closest('.prow'); if(!row) return [];
   const ri=prows.indexOf(row); if(ri<0) return [];
@@ -2331,10 +2334,11 @@ stage.addEventListener('pointerdown',e=>{
   selEat=true;
   if(e.shiftKey && SEL){                     /* Shift+点：从已选的头接着选到这里 */
     const h=hits.reduce((p,q)=>Math.abs(q.a-SEL.a)<Math.abs(p.a-SEL.a)?q:p);
-    selSet(Math.min(SEL.a,h.a), Math.max(SEL.b,h.b)); seek(SEL.a); return;
+    selSet(Math.min(SEL.a,h.a), Math.max(SEL.b,h.b)); selNew=true; return;
   }
-  /* 当前位置所在的那一遍优先，其次之后最近的，再其次最后一遍 */
-  const h=hits.find(q=>q.a<=pos+1e-6 && pos<q.b) || hits.find(q=>q.a>=pos) || hits[hits.length-1];
+  /* 同一小节第 1 遍、第 2 遍都弹（整页模式反复行只印一次）：点的时候分不出是哪一遍，一律取第 1 遍（用户 2026-10-30 定）。
+     hits 按演奏顺序排，[0] 就是第一次经过；往后拖时取锚点之后最近的那一遍，选段仍然连着 */
+  const h=hits[0];
   selAnc=h; stage.classList.add('selecting');
   try{ stage.setPointerCapture(e.pointerId); }catch(_){}
   selSet(h.a,h.b);
@@ -2354,7 +2358,7 @@ stage.addEventListener('pointermove',e=>{
   if(!selAnc) return;
   selAnc=null; stage.classList.remove('selecting');
   try{ stage.releasePointerCapture(e.pointerId); }catch(_){}
-  if(SEL){ seek(SEL.a); say('已选 '+SEL.n+' 小节 · 按 ▶ 循环 · 右键取消'); }
+  if(SEL){ selNew=true; say('已选 '+SEL.n+' 小节 · 按 ▶ 循环 · 右键取消'); }   /* 不 seek：游标和页面都别动 */
 }));
 stage.addEventListener('contextmenu',e=>{
   if(!(e.target.closest && e.target.closest('.prow')) && !SEL) return;
