@@ -346,7 +346,7 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
   from{opacity:.95;transform:translate3d(var(--fx,0),var(--fy,0),0) scale(calc(var(--fs,1)*.25))}
   to  {opacity:0;  transform:translate3d(var(--fx,0),var(--fy,0),0) scale(calc(var(--fs,1)*1.5))}}
 #stage{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;cursor:pointer;
-       -webkit-user-select:none;user-select:none}
+       -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}   /* 长按选小节：别弹 iOS 的放大镜/菜单 */
 #stage::-webkit-scrollbar{display:none}
 #paper{position:relative;width:var(--pw,100%);max-width:1040px;margin:0 auto;background:var(--paper);
        box-shadow:var(--shadow);padding:0 14px 8px;
@@ -425,6 +425,8 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
         color:#fff;background:rgba(37,99,235,.85);padding:0 5px;border-radius:3px;white-space:nowrap}
 #stage.selecting{cursor:col-resize}
 #stage.selecting #paper{-webkit-user-select:none;user-select:none}
+#selX{color:#2563eb;border-color:rgba(37,99,235,.5)}
+#selX[hidden]{display:none}
 #selrng{position:absolute;top:5px;height:10px;border-radius:3px;background:rgba(37,99,235,.28);
         box-shadow:inset 0 0 0 1.5px rgba(37,99,235,.7);pointer-events:none;display:none}
 #cue{position:absolute;left:0;top:0;width:var(--lw,3px);margin-left:calc(var(--lw,3px)/-2);background:var(--cue);border-radius:2px;
@@ -623,6 +625,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
       <div id="ctrl">
         <button id="play" title="开始 / 停住"><svg id="pico" width="15" height="17" viewBox="0 0 15 17" aria-hidden="true"><path d="M1 1.2 14 8.5 1 15.8Z" fill="currentColor"/></svg></button>
         <div id="readout">剩 <b id="rem">0:00</b> <span id="beat">♩1/4</span> <span id="where"></span></div>
+        <button class="sm cjk" id="selX" hidden title="取消选段循环（也可右键 / Esc）">✕ 循环</button>
         <div id="spdwrap">
           <button class="sm" id="spd" aria-expanded="false" title="调速（BPM）"><b id="durv">68</b> BPM</button>
           <div id="spdpop" hidden>
@@ -2040,11 +2043,14 @@ function say(t){ flash.textContent=t; flash.classList.add('on');
 function frame(t){
   if(!playing) return;
   if(!last) last=t;
-  const dt=Math.min(.05,(t-last)/1000); last=t;
+  /* 一帧最多算 0.25 秒：原来是 0.05，页面一卡（iPad 滚动时常见）超出的时间就丢了，游标从此落后节拍器（实测 50~100ms）。
+     0.25 仍然挡得住「切走标签页再回来」那种几秒的大跳 */
+  const dt=Math.min(.25,(t-last)/1000); last=t;
   if(!drag) pos+=bpm*GRP/60*dt;
   /* 选段循环：走到选段尾就绕回段首（多走的那一点带过去，不丢拍）。
      不调 anchor()：节拍器的格子 sched() 已经同样绕过去了，重新对齐反而会抖一下 */
-  if(SEL && !drag && pos>=SEL.b && pos<SEL.b+2){ pos=SEL.a+(pos-SEL.b); }
+  if(SEL && !drag && pos>=SEL.b && pos<SEL.b+2){ pos=SEL.a+(pos-SEL.b);
+    if(aPos>=SEL.b) anchor();               /* 节拍器格子是从段外对齐的（播放中拖了进度条），sched 不会绕，这里重新对齐 */ }
   if(pos>=TOT){ pos=TOT; paint(); follow(dt); P.stop(); say('谱终'); return; }
   paint(); follow(dt);
   raf=requestAnimationFrame(frame);
@@ -2106,7 +2112,9 @@ function stopSched(){ clearInterval(schedTimer); schedTimer=0; }
 const PLAYD='M1 1.2 14 8.5 1 15.8Z', PAUSED='M1.5 1h4v15h-4ZM9.5 1h4v15h-4Z';
 function icon(){ pico.firstElementChild.setAttribute('d', playing?PAUSED:PLAYD); }
 const P={
-  go(audioAt){ last=0; playing=true; icon(); wake(true); if(metro) audio();
+  go(audioAt){ last=performance.now(); playing=true; icon(); wake(true); if(metro) audio();
+        /* 预备拍交棒：轮询是 40ms 一次，交棒时正式第 1 拍其实已经响过一会儿了——把这段补进游标，别从一开始就慢半拍 */
+        if(audioAt!=null && acx){ const late=acx.currentTime-audioAt; if(late>0 && late<0.5) pos=Math.min(TOT, pos+late*bpm*GRP/60); }
         /* armed 表示预备拍已经把格子定好、排程器也在跑了，这里不能重新对齐——
            iPad 上音频时钟和页面时钟有偏差，重新对齐会把第 1 拍算成「已过期」而跳过。 */
         if(!armed){ anchor(audioAt); startSched(); }
@@ -2153,7 +2161,9 @@ function countIn(){
   }
   const t0ms=performance.now()+60, total=units*spu*1000;
   cid=setInterval(()=>{
-    const el=performance.now()-t0ms;
+    /* 有节拍器声音时按**音频时钟**数：刚打开节拍器时音频时钟要几百毫秒才走起来，
+       按页面时钟数完，游标会比第 1 拍的声音早 0.2~0.3 秒起步，之后一直抢拍（实测） */
+    const el = (playAt!=null && acx) ? (acx.currentTime-(playAt-units*spu))*1000 : performance.now()-t0ms;
     if(el>=total){ clearInterval(cid); cid=0; count.hidden=true; P.go(playAt); return; }
     count.firstElementChild.textContent=Math.max(1, mains-Math.floor(el/(spu*GRP*1000)));
   },40);
@@ -2307,7 +2317,8 @@ function selClear(){ if(!SEL && !selAnc) return; SEL=null; selAnc=null; stage.cl
 function selPaint(){
   selDirty=false;
   paper.querySelectorAll('.selbar').forEach(n=>n.remove());
-  const rg=$('selrng');
+  const rg=$('selrng'), bx=$('selX');
+  if(bx) bx.hidden=!SEL;
   if(!SEL || !PL.length){ if(rg) rg.style.display='none'; return; }
   if(rg){ rg.style.display='block'; rg.style.left=(SEL.a/TOT*100)+'%'; rg.style.width=((SEL.b-SEL.a)/TOT*100)+'%'; }
   const seen={}; let head=true;
@@ -2328,6 +2339,7 @@ function selPaint(){
   });
 }
 stage.addEventListener('pointerdown',e=>{
+  if(e.pointerType!=='touch') selEat=false;  /* 新的一下按下：上一次选段留下的「吞 click」标记作废（不靠定时器，免得吞掉真点击） */
   if(e.pointerType==='touch' || e.button!==0 || playing || cid || !PL.length) return;
   const hits=barHits(e); if(!hits.length) return;
   e.preventDefault();                        /* 别拖出一片文字选区（矢量谱里的字是真文字） */
@@ -2343,17 +2355,59 @@ stage.addEventListener('pointerdown',e=>{
   try{ stage.setPointerCapture(e.pointerId); }catch(_){}
   selSet(h.a,h.b);
 });
-stage.addEventListener('pointermove',e=>{
-  if(!selAnc || e.pointerType==='touch') return;
-  /* 拖出谱条（行间空白）时 target 不是谱条：按纵坐标找最近那一行再算 */
-  let t=document.elementFromPoint(e.clientX,e.clientY), hits=[];
-  if(t && t.closest && t.closest('.prow')) hits=barHits({target:t,clientX:e.clientX});
-  if(!hits.length) return;
+function hitsAt(x,y){                       /* 坐标下的小节（拖动时 target 被捕获了，按坐标重新找） */
+  const t=document.elementFromPoint(x,y);
+  return (t && t.closest && t.closest('.prow')) ? barHits({target:t,clientX:x}) : [];
+}
+function selExtend(hits){                    /* 从锚点一直选到 hits 那一小节：取锚点之后最近的那一遍，往回拖取之前最近的 */
+  if(!selAnc || !hits.length) return;
   const fw=hits.filter(q=>q.a>=selAnc.a).sort((p,q)=>p.a-q.a)[0];
   const bw=hits.filter(q=>q.a<selAnc.a).sort((p,q)=>q.a-p.a)[0];
   const h=fw||bw;
   selSet(Math.min(selAnc.a,h.a), Math.max(selAnc.b,h.b));
+}
+stage.addEventListener('pointermove',e=>{
+  if(!selAnc || e.pointerType==='touch') return;
+  selExtend(hitsAt(e.clientX,e.clientY));
 });
+/* ---- iPad / 手机：长按小节 = 选中，不松手接着拖 = 一直选到那里 ----
+   单点照旧「点谱面 = 播放/暂停」（有选段就是播放选段）；取消用底部「✕ 循环」。
+   用 touch 事件不用 pointer：手指一动浏览器就开始滚页面、pointer 会被 cancel；
+   长按到点之前手指动了 = 在滚动，放弃；到点之后 touchmove 里 preventDefault，页面就不跟着滚了。 */
+let lp=null;
+const LP_MS=420, LP_MOVE=10;
+function lpCancel(){ if(lp){ clearTimeout(lp.tm); lp=null; } }
+stage.addEventListener('touchstart',e=>{
+  lpCancel(); selEat=false;                  /* 新的一次触摸：上一次长按留下的「吞 click」标记作废 */
+  if(e.touches.length!==1 || playing || cid || !PL.length) return;
+  const t=e.touches[0];
+  if(!hitsAt(t.clientX,t.clientY).length) return;
+  lp={x:t.clientX, y:t.clientY, on:false};
+  lp.tm=setTimeout(()=>{
+    if(!lp) return;
+    const hits=hitsAt(lp.x,lp.y); if(!hits.length){ lp=null; return; }
+    lp.on=true; selEat=true;
+    selAnc=hits[0];                          /* 两遍都弹的小节取第 1 遍，和鼠标一样 */
+    stage.classList.add('selecting'); selSet(selAnc.a,selAnc.b);
+    try{ navigator.vibrate && navigator.vibrate(12); }catch(_){}
+  }, LP_MS);
+},{passive:true});
+stage.addEventListener('touchmove',e=>{
+  if(!lp) return;
+  const t=e.touches[0];
+  if(!lp.on){ if(Math.hypot(t.clientX-lp.x, t.clientY-lp.y)>LP_MOVE) lpCancel(); return; }   /* 是在滚动 */
+  e.preventDefault();                        /* 选段中：页面别跟着手指滚 */
+  selExtend(hitsAt(t.clientX,t.clientY));
+},{passive:false});
+['touchend','touchcancel'].forEach(ev=>stage.addEventListener(ev,e=>{
+  if(!lp) return;
+  const on=lp.on; lpCancel();
+  if(!on) return;
+  selAnc=null; stage.classList.remove('selecting');
+  if(ev==='touchend') e.preventDefault();    /* 吞掉松手后补发的 click（那会当成「点谱面 = 播放」）；selEat 兜底，下一次触摸开始时清掉 */
+  if(SEL){ selNew=true; say('已选 '+SEL.n+' 小节 · 点谱面或 ▶ 循环 · 点「✕ 循环」取消'); }
+},{passive:false}));
+$('selX').onclick=e=>{ e.stopPropagation(); selClear(); };
 ['pointerup','pointercancel'].forEach(ev=>stage.addEventListener(ev,e=>{
   if(!selAnc) return;
   selAnc=null; stage.classList.remove('selecting');
