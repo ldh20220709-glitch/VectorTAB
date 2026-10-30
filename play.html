@@ -1,7 +1,1051 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>VectorTAB</title><style>:root{color-scheme:light dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body><script>
-/* ===== 器数分离：play.html 是纯播放器，按 ?id= 从 songs/<id>/song.json 取这一首（site.py build 生成） =====
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>VectorTAB</title><style>:root{color-scheme:light dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style><script>
+/* ===== VectorTAB 矢量谱渲染器（器数分离第二期，2026-10-30） =====
+   score.json（制谱-omr 的语义谱）→ 播放器要的一首歌：SVG 谱面 + 行几何 + 演奏顺序 + 功能谱。
+   逐行移植自 制谱-omr/scripts/draw.py、draw_tab.py、seq.py 和 guitar-skill/scripts/make_digital.py、make_song.py；
+   Python 那套保留作对照：test_vecrender.py 用同一份 score.json 两边各出一遍，SVG 逐字节、JSON 逐项一致才算对。
+   改排版只改这里（再跑对拍更新 Python 或反过来），浮点运算顺序别动——差一个 0.05 输出就不一样。 */
+(function (G) {
+'use strict';
+
+/* ---------- Python 兼容：数字格式、真假、转义 ---------- */
+function fx(x, f) {                       // f'{x:.{f}f}'：精确的二进制值四舍五入，正好一半时取偶（JS toFixed 是取大）
+  if (Object.is(x, -0)) return '-' + (0).toFixed(f);
+  const m = x * Math.pow(2, f + 1);
+  if (Number.isInteger(m) && m % 2 !== 0 && Math.abs(m) < 2 ** 52) {
+    const p = Math.pow(10, f), n = x * p, k0 = Math.floor(n);
+    const k = (k0 % 2 === 0) ? k0 : k0 + 1;
+    const s = (k / p).toFixed(f);
+    return (k === 0 && x < 0) ? '-' + s : s;
+  }
+  return x.toFixed(f);
+}
+const f1 = x => fx(x, 1), f2 = x => fx(x, 2);
+function pf(x) { return Number.isInteger(x) ? x.toFixed(1) : String(x); }      // repr(float)
+function pround(x) {                      // round(x) → int，半数取偶
+  const fl = Math.floor(x);
+  if (x - fl === 0.5) return (fl % 2 === 0) ? fl : fl + 1;
+  return Math.round(x);
+}
+function pround4(x) { return parseFloat(fx(x, 4)); }
+function gfmt(x) {                        // f'{x:g}'
+  if (x === 0) return '0';
+  let s = x.toPrecision(6);
+  if (s.indexOf('e') >= 0) { let [m, e] = s.split('e'); if (m.indexOf('.') >= 0) m = m.replace(/0+$/, '').replace(/\.$/, ''); const ev = parseInt(e, 10); return m + 'e' + (ev < 0 ? '-' : '+') + String(Math.abs(ev)).padStart(2, '0'); }
+  if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s;
+}
+function T(v) {                           // Python 的真假
+  if (v === null || v === undefined || v === false || v === 0 || v === '') return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === 'object') return Object.keys(v).length > 0;
+  return true;
+}
+const or = (a, b) => T(a) ? a : b;
+const get = (o, k, d) => (o && o[k] !== undefined) ? o[k] : (d === undefined ? null : d);
+function esc(s) {                          // html.escape(s or '')
+  s = T(s) ? String(s) : '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+}
+const range = (a, b) => { if (b === undefined) { b = a; a = 0; } const r = []; for (let i = a; i < b; i++) r.push(i); return r; };
+/* sum()：Python 3.12 起浮点求和用 Neumaier 补偿（CPython builtin_sum），逐个相加会在末位差出 0.1（后来指弹谱） */
+const sum = a => { let f = 0, c = 0; for (const x of a) { const t = f + x; if (Math.abs(f) >= Math.abs(x)) c += (f - t) + x; else c += (x - t) + f; f = t; } if (c && Number.isFinite(c)) f += c; return f; };
+const minBy = (a, f) => { let b = a[0], bv = f(b); for (const v of a) { const fv = f(v); if (fv < bv) { b = v; bv = fv; } } return b; };
+const isdigit = s => /^[0-9]+$/.test(String(s));
+
+/* ================= draw_tab.py ================= */
+let UNIT = 1.0;
+const SPC = 11.5;
+const NONPITCH = ['roll', 'grace', 'up', 'down', 'tech', 'strum', 'oval'];
+const nonp = f => NONPITCH.indexOf(f) >= 0;
+const STEMTOP = 1.18, TABH = SPC * 5, STEM = 22, BEAM = 4.5, CLEFW = 4.7;
+
+function tab_slurs(out, row, npos, y) {
+  for (const s_ of (row.slurs || [])) {
+    const a = npos.get(s_.b0 + ',' + s_.n0), b = npos.get(s_.b1 + ',' + s_.n1);
+    if (!a || !b || b[0] <= a[0]) continue;
+    const st = get(s_, 's', Math.min(a[1], b[1]));
+    const k = get(s_, 'k');
+    const below = k !== null && st >= 3;
+    let ty, cy;
+    if (below) { ty = y + st * SPC + SPC * 0.62; cy = ty + Math.min(9, 4 + (b[0] - a[0]) * 0.10); }
+    else { ty = y + st * SPC - SPC * 0.62; cy = ty - Math.min(9, 4 + (b[0] - a[0]) * 0.10); }
+    const [x0_, x1_] = k === 'tie' ? [a[0] + 2, b[0] - 2] : [a[0], b[0]];
+    out.push(`<path d="M${f1(x0_)},${f1(ty)} Q${f1((x0_ + x1_) / 2)},${f1(cy)} ${f1(x1_)},${f1(ty)}" fill="none" class="cs-tab" stroke-width="1.3"/>`);
+    if (k === 'sl') {
+      const fa = _fret_on(row, s_.b0, s_.n0, st), fb = _fret_on(row, s_.b1, s_.n1, st);
+      slide_line(out, a[0], b[0], y + st * SPC, fa === null || fb === null || fb >= fa);
+    }
+    const ends_ = [[s_.b0, s_.n0], [s_.b1, s_.n1]].filter(([bb, nn]) => bb < row.bars.length && nn < row.bars[bb].notes.length)
+      .map(([bb, nn]) => row.bars[bb].notes[nn]);
+    if (['H', 'P', 'sl'].indexOf(k) >= 0 && !ends_.some(e => T(e.ham) || T(e.tech)))
+      tech_letter(out, (a[0] + b[0]) / 2, y, k, T(row.tab_only) ? null : Math.min(cy, y) - 1);
+  }
+}
+
+function _fret_on(row, bi, ni, st) {
+  const bar = row.bars[bi]; if (!bar) return null;
+  const n = bar.notes[ni]; if (!n || !n.hit) return null;
+  for (const h of n.hit) {
+    if (h.s === st && !T(h.grace) && !nonp(h.f)) {
+      const v = typeof h.f === 'number' ? h.f : (/^\s*[+-]?\d+\s*$/.test(String(h.f)) ? parseInt(h.f, 10) : NaN);
+      return Number.isNaN(v) ? null : Math.trunc(v);
+    }
+  }
+  return null;
+}
+
+function tech_letter(out, x, y, k, yb) {
+  const t = k === 'sl' ? 'sl.' : k;
+  const ty_ = (yb === null || yb === undefined) ? y - SPC * 2.55 : yb - 2;
+  out.push(`<text x="${f1(x)}" y="${f1(ty_)}" font-size="${f1(SPC * 0.95)}" text-anchor="middle" font-family="Times New Roman, serif" font-style="${k === 'sl' ? 'italic' : 'normal'}" class="cf-tab">${t}</text>`);
+}
+
+function slide_line(out, xa, xb, sy, up) {
+  if (up === undefined) up = true;
+  let x0_ = xa + 5, x1_ = xb - 5;
+  if (x1_ - x0_ < 3) { x0_ = xa + 3; x1_ = xb - 3; }
+  const [ya, yb] = up ? [sy + 4, sy - 4] : [sy - 4, sy + 4];
+  out.push(`<line x1="${f1(x0_)}" y1="${f1(ya)}" x2="${f1(x1_)}" y2="${f1(yb)}" class="cs-tab" stroke-width="1.3"/>`);
+}
+
+function accent(out, x, y) {
+  const yc = y - SPC * 1.85, w = SPC * 0.38, h = SPC * 0.26;
+  out.push(`<path d="M${f1(x - w)},${f1(yc - h)} L${f1(x + w)},${f1(yc)} L${f1(x - w)},${f1(yc + h)}" fill="none" class="cs-tab" stroke-width="1.3"/>`);
+}
+
+function barline(out, x, y0, y1, kind, sp, first, dotr, cls_base) {
+  kind = kind || 'bar'; if (sp === undefined) sp = 13; cls_base = cls_base || 'cs-tab';
+  const h = y1 - y0;
+  const thin = (xx, w, cls) => { if (w === undefined) w = 1.4; cls = cls || cls_base;
+    out.push(`<line x1="${f1(xx)}" y1="${f1(y0)}" x2="${f1(xx)}" y2="${f1(y1)}" class="${cls}" stroke-width="${w}"/>`); };
+  const thick = xx => out.push(`<rect x="${f1(xx - 2)}" y="${f1(y0)}" width="4" height="${f1(h)}" class="cf-house"/>`);
+  const rr = T(dotr) ? dotr : Math.max(1.8, sp * 0.17);
+  const dots = xx => { for (const t of [0.3, 0.7]) out.push(`<circle cx="${f1(xx)}" cy="${f2(y0 + h * t)}" r="${f1(rr)}" class="cf-house"/>`); };
+  if (kind === 'rep-start') { thick(x + 2); thin(x + 6, undefined, 'cs-house'); dots(x + 11); }
+  else if (kind === 'rep-end') { dots(x - 11); thin(x - 6, undefined, 'cs-house'); thick(x - 2); }
+  else if (kind === 'final') { thin(x - 5, undefined, 'cs-house'); thick(x - 1); }
+  else thin(x, first ? 2 : 1.4);
+}
+
+function _onset_min(tn, jn) {
+  let m = 20.0;
+  if (jn !== null && jn !== undefined) { if (T(jn.ly0) || T(jn.ly1)) m = 25.0; }
+  if (tn !== null && tn !== undefined) {
+    const fr = tn.hit.filter(h => h.s >= 0 && isdigit(h.f)).map(h => h.f);
+    if (fr.some(f => String(f).length > 1)) m = Math.max(m, 24.0);
+  }
+  return m;
+}
+function _onset_pre(tn, jn) {
+  let p = 0.0;
+  if (jn !== null && jn !== undefined) { if (T(jn.acc)) p += 10.0; if (T(jn.grace)) p += 16.0; }
+  if (tn !== null && tn !== undefined && tn.hit.some(h => get(h, 'off') === -1)) p += 14.0;
+  return p;
+}
+function bar_width(b) { return T(b.bpx) ? b.bpx : b.beats; }
+function time_frac(b, t) {
+  const kn = b.bkn;
+  if (!T(kn)) return b.beats ? t / b.beats : 0.0;
+  const tot = kn[kn.length - 1][1] || 1.0;
+  if (t <= kn[0][0]) return kn[0][1] / tot;
+  for (let i = 0; i + 1 < kn.length; i++) {
+    const [t0, u0] = kn[i], [t1, u1] = kn[i + 1];
+    if (t <= t1 + 1e-9) return (u0 + (u1 - u0) * (t1 > t0 ? (t - t0) / (t1 - t0) : 0.0)) / tot;
+  }
+  return 1.0;
+}
+function prep_rows(trows, jrows, avails) {
+  const OVER = 16.0;
+  trows.forEach((tr, ri) => {
+    if (T(tr.tab_only)) return;
+    const jr = (jrows && ri < jrows.length) ? jrows[ri] : null;
+    const segs = [];
+    tr.bars.forEach((tb, bi) => {
+      const jb = (jr && bi < jr.bars.length) ? jr.bars[bi] : null;
+      const beats = tb.beats || 1.0;
+      const at = new Map();
+      for (const [key, notes] of [['t', tb.notes], ['j', (jb && jb.notes) || []]]) {
+        let t = 0.0;
+        for (const n of notes) { const kk = pround4(t); if (!at.has(kk)) at.set(kk, {}); at.get(kk)[key] = n; t += n.dur; }
+      }
+      const set = new Set([...at.keys(), 0.0, pround4(beats)]);
+      let Ts = [...set].sort((a, b) => a - b).filter(x => x <= beats + 1e-6);
+      const sg = [];
+      for (let i = 0; i + 1 < Ts.length; i++) {
+        const t0 = Ts[i], t1 = Ts[i + 1];
+        const a0 = at.get(t0) || {}, a1 = at.get(t1) || {};
+        let mn = T(a0) ? _onset_min(get(a0, 't'), get(a0, 'j')) : 0.0;
+        mn += T(a1) ? _onset_pre(get(a1, 't'), get(a1, 'j')) : 0.0;
+        sg.push([t1 - t0, mn]);
+      }
+      segs.push([Ts, sg]);
+    });
+    const tot_beats = sum(tr.bars.map(tb => tb.beats)) || 1.0;
+    const avail = (avails && ri < avails.length ? avails[ri] : 100.0 * tot_beats) - OVER * tr.bars.length;
+    const need = k => { const v = []; for (const [, sg] of segs) for (const [dt, mn] of sg) v.push(Math.max(mn, k * dt)); return sum(v); };
+    let lo = 0.0, hi = 4.0 * avail / tot_beats + 1.0, k;
+    if (need(0.0) >= avail) k = 0.0;
+    else {
+      for (let i = 0; i < 50; i++) { const mid = (lo + hi) / 2; if (need(mid) < avail) lo = mid; else hi = mid; }
+      k = lo;
+    }
+    segs.forEach(([Ts, sg], bi) => {
+      const kn = [[Ts[0], 0.0]]; let u = 0.0;
+      sg.forEach(([dt, mn], i) => { u += Math.max(mn, k * dt); kn.push([Ts[i + 1], u]); });
+      const tb = tr.bars[bi];
+      const jb = (jr && bi < jr.bars.length) ? jr.bars[bi] : null;
+      for (const b_ of [tb, jb]) if (b_ !== null) { b_.bkn = kn; b_.bpx = u + OVER; delete b_.bwt; }
+    });
+  });
+}
+function bar_pad(b, bt, bi) {
+  let off = bt[bi] === 'rep-start' ? 20 : 9;
+  if (T(b.notes) && (b.notes[0].hit || []).some(h => get(h, 'off') === -1)) off = Math.max(off, 24);
+  const rp = (bi + 1 < bt.length && (bt[bi + 1] === 'rep-end' || bt[bi + 1] === 'final')) ? 17 : 4;
+  return [off, rp];
+}
+function note_x(b, bt, bi, x, bw, t, tab_only) {
+  const [off, rp] = bar_pad(b, bt, bi);
+  const span = Math.max(10.0, bw - off - rp);
+  const fr = note_frac(b.notes, b.beats, tab_only, b);
+  let acc = 0.0;
+  for (let i = 0; i < b.notes.length && i < fr.length; i++) {
+    const n = b.notes[i];
+    if (Math.abs(acc - t) < 1e-6 && n.dur > 1e-3) return x + off + span * fr[i];
+    acc += n.dur;
+  }
+  return x + off + span * time_frac(b, t);
+}
+function note_frac(notes, beats, tab_only, bar) {
+  if (!T(tab_only) || !T(notes)) {
+    const out = []; let acc = 0.0;
+    for (const n of notes) { out.push(bar ? time_frac(bar, acc) : (beats ? acc / beats : 0.0)); acc += n.dur; }
+    return out;
+  }
+  const w = notes.map(n => Math.pow(Math.max(n.dur, 1e-3), 0.6));
+  for (let i = 1; i < notes.length; i++) {
+    const fs = notes[i].hit.map(h => h.f);
+    if (fs.indexOf('roll') >= 0) w[i - 1] += 0.45;
+    else if (notes[i].hit.some(h => T(h.grace))) w[i - 1] += 0.3;
+  }
+  const tot = sum(w) || 1.0;
+  const out = []; let acc = 0.0;
+  for (const v of w) { out.push(acc / tot); acc += v; }
+  return out;
+}
+function clef_width(sig, clef) { if (clef === undefined) clef = true; return clef ? SPC * (CLEFW + (T(sig) ? 1.9 : 0)) : 0; }
+
+function tab_svg(row, x0, width, y, out, clef, sig) {
+  if (clef === undefined) clef = true;
+  const bars = row.bars;
+  const tot = sum(bars.map(bar_width)) || 1;
+  const bt = or(row.bt, bars.map(() => 'bar').concat(['bar']));
+  const cw = clef_width(sig, clef);
+  for (let i = 0; i < 6; i++) {
+    const yy = y + i * SPC;
+    out.push(`<line x1="${x0}" y1="${pf(yy)}" x2="${pf(x0 + width)}" y2="${pf(yy)}" class="cs-tab" stroke-width="1"/>`);
+  }
+  const by = y + TABH + STEM;
+  const npos = new Map();
+  const hams = [];
+  barline(out, x0, y, y + TABH, bt[0], SPC, true, SPC * 0.26);
+  if (clef) {
+    [0.80, 2.51, 4.24].forEach((cy, k) => {
+      out.push(`<text x="${f1(x0 + SPC * 3.35)}" y="${f1(y + SPC * cy + SPC * 0.46)}" font-size="${f1(SPC * 1.87)}" text-anchor="middle" font-family="Times New Roman, serif" class="cf-tab">${'TAB'[k]}</text>`);
+    });
+    if (T(sig)) {
+      const p = sig.split('/').concat(['']); const a_ = p[0], b_ = p[1];
+      for (const [t_, cy] of [[a_, 1.29], [b_, 3.60]])
+        out.push(`<text x="${f1(x0 + SPC * 4.75)}" y="${f1(y + SPC * cy + SPC * 0.45)}" font-size="${f1(SPC * 1.81)}" text-anchor="middle" font-family="Times New Roman, serif" class="cf-tab">${t_}</text>`);
+    }
+  }
+  let x = x0 + cw;
+  const last = {};
+  const tied = new Set((row.slurs || []).filter(q => get(q, 'k') === 'tie').map(q => q.b1 + ',' + q.n1 + ',' + get(q, 's')));
+  bars.forEach((b, bi) => {
+    const bw = (width - cw) * bar_width(b) / tot;
+    const [off, rp] = bar_pad(b, bt, bi);
+    const span = Math.max(10.0, bw - off - rp);
+    let acc = 0.0; const pos = [];
+    const fr = note_frac(b.notes, b.beats, get(row, 'tab_only'), b);
+    for (let i = 0; i < b.notes.length && i < fr.length; i++) {
+      const n = b.notes[i];
+      pos.push([x + off + span * fr[i], acc]);
+      const hs0 = n.hit.filter(h => !nonp(h.f)).map(h => h.s);
+      npos.set(bi + ',' + (pos.length - 1), [pos[pos.length - 1][0], hs0.length ? Math.min(...hs0) : 0]);
+      acc += n.dur;
+    }
+    pos.forEach(([nx], i) => {
+      const n = b.notes[i];
+      const hs = n.hit.filter(h => !nonp(h.f)).map(h => h.s).sort((a, c) => a - c);
+      let top = hs.length ? y + (hs[hs.length - 1] + STEMTOP) * SPC : y;
+      if (!hs.length && n.hit.some(h => h.f === 'up' || h.f === 'down')) top = y + 5 * SPC + SPC * 0.3;
+      out.push(`<line x1="${f1(nx)}" y1="${f1(top)}" x2="${f1(nx)}" y2="${f1(by)}" class="cs-tab" stroke-width="1.6"/>`);
+      if (T(n.dot)) out.push(`<circle cx="${f1(nx + SPC * 0.45)}" cy="${f1(by - SPC * 0.35)}" r="${f1(SPC * 0.16)}" class="cf-tab"/>`);
+      if (hs.length >= 2 && hs[hs.length - 1] - hs[0] >= 2)
+        out.push(`<line x1="${f1(nx)}" y1="${f1(y + (hs[0] + 0.55) * SPC)}" x2="${f1(nx)}" y2="${f1(y + (hs[hs.length - 1] - 0.45) * SPC)}" class="cs-tab" stroke-width="1.6"/>`);
+    });
+    for (let k = 1; k < 4; k++) {
+      let i0 = 0;
+      while (i0 < b.notes.length) {
+        if (b.notes[i0].beams < k) { i0++; continue; }
+        let j = i0;
+        while (j + 1 < b.notes.length && b.notes[j + 1].beams >= k
+          && Math.trunc(pos[j + 1][1] / UNIT + 1e-6) === Math.trunc(pos[i0][1] / UNIT + 1e-6)
+          && T(get(b.notes[j + 1], 'tup')) === T(get(b.notes[i0], 'tup'))) j++;
+        const yy = by - (k - 1) * (BEAM + 2.5);
+        let x1_ = pos[i0][0], x2_ = pos[j][0];
+        if (j === i0) x2_ = x1_ + 9;
+        out.push(`<rect x="${f1(x1_ - 0.8)}" y="${f1(yy - BEAM)}" width="${f1(x2_ - x1_ + 1.6)}" height="${BEAM}" class="cf-tab"/>`);
+        i0 = j + 1;
+      }
+    }
+    let ni = 0;
+    while (ni < b.notes.length) {
+      if (get(b.notes[ni], 'tup') !== 3) { ni++; continue; }
+      const grp = [ni];
+      while (grp.length < 3 && grp[grp.length - 1] + 1 < b.notes.length && get(b.notes[grp[grp.length - 1] + 1], 'tup') === 3) grp.push(grp[grp.length - 1] + 1);
+      const xa_ = pos[grp[0]][0], xb_ = pos[grp[grp.length - 1]][0];
+      const yb_ = by + 9, xm = (xa_ + xb_) / 2;
+      out.push(`<path d="M${f1(xa_)},${f1(yb_ - 4)} L${f1(xa_)},${f1(yb_)} L${f1(xm - 5)},${f1(yb_)} M${f1(xm + 5)},${f1(yb_)} L${f1(xb_)},${f1(yb_)} L${f1(xb_)},${f1(yb_ - 4)}" fill="none" class="cs-tab" stroke-width="1.1"/>`);
+      out.push(`<text x="${f1(xm)}" y="${f1(yb_ + 4)}" font-size="${f1(SPC * 1.0)}" text-anchor="middle" font-family="Times New Roman, serif" font-style="italic" class="cf-tab">3</text>`);
+      ni = grp[grp.length - 1] + 1;
+    }
+    let offH = off;      /* Python 原版音头循环里的 off = h.get('off') or 0 覆盖了小节的 off，下面延音杠用的是被覆盖后的值（线上谱面就是这样，照样复刻） */
+    pos.forEach(([nx0], ni) => {
+      const n = b.notes[ni];
+      if (T(n.acc)) accent(out, nx0, y);
+      if (T(n.ham) || T(n.tech)) {
+        const gp = n.hit.filter(h => get(h, 'off') === -1);
+        hams.push({ bi, ni, ch: T(n.ham) ? 'H' : n.tech, x: gp.length ? nx0 - 6 : null, nx: nx0 });
+      }
+      for (const h of n.hit) {
+        let nx = nx0;
+        if (h.f === 'grace' && T(h.plain)) continue;
+        if (h.f === 'oval') {
+          const ya_ = y + SPC * get(h, 'a', -0.6), yb_ = y + SPC * get(h, 'b', 4.6);
+          out.push(`<ellipse cx="${f1(nx)}" cy="${f1((ya_ + yb_) / 2)}" rx="${f1(SPC * 0.78)}" ry="${f1((yb_ - ya_) / 2)}" fill="none" class="cs-tab" stroke-width="1.6"/>`);
+          continue;
+        }
+        if (h.f === 'grace') {
+          const gx = nx0 - 12, ty = y + h.s * SPC, wq = SPC * 0.72;
+          for (const dy of [-0.23, 0.19]) out.push(`<rect x="${f1(gx - wq / 2)}" y="${f1(ty + SPC * dy)}" width="${f1(wq)}" height="1.4" class="cf-tab"/>`);
+          out.push(`<path d="M${f1(gx - wq * 0.34)},${f1(ty + SPC * 0.23)} q0,${f1(SPC * 0.46)} ${f1(wq * 0.95)},${f1(SPC * 0.26)}" fill="none" class="cs-tab" stroke-width="1.4"/>`);
+          continue;
+        }
+        if (h.f === 'up' || h.f === 'down') {
+          const ya_ = y + SPC * get(h, 'a', 0.0), yb_ = y + SPC * get(h, 'b', 4.5);
+          out.push(`<line x1="${f1(nx)}" y1="${f1(ya_)}" x2="${f1(nx)}" y2="${f1(yb_)}" class="cs-tab" stroke-width="1.4"/>`);
+          if (h.f === 'up') out.push(`<path d="M${f1(nx - SPC * 0.30)},${f1(ya_ + SPC * 0.70)} L${f1(nx)},${f1(ya_)} L${f1(nx + SPC * 0.30)},${f1(ya_ + SPC * 0.70)} Z" class="cf-tab"/>`);
+          else out.push(`<path d="M${f1(nx - SPC * 0.30)},${f1(yb_ - SPC * 0.70)} L${f1(nx)},${f1(yb_)} L${f1(nx + SPC * 0.30)},${f1(yb_ - SPC * 0.70)} Z" class="cf-tab"/>`);
+          continue;
+        }
+        if (h.f === 'strum') {
+          out.push(`<line x1="${f1(nx)}" y1="${f1(y)}" x2="${f1(nx)}" y2="${f1(y + 5 * SPC)}" class="cs-tab" stroke-width="1.4"/>`);
+          continue;
+        }
+        if (h.f === 'slap') {
+          const sy_ = y + h.s * SPC, hw = SPC * 0.55;
+          out.push(`<rect x="${f1(nx - hw)}" y="${f1(sy_ - hw)}" width="${f1(2 * hw)}" height="${f1(2 * hw)}" fill="none" class="cs-tab" stroke-width="1.2"/>`);
+          out.push(`<path d="M${f1(nx - hw * 0.6)},${f1(sy_ - hw * 0.6)} L${f1(nx + hw * 0.6)},${f1(sy_ + hw * 0.6)} M${f1(nx + hw * 0.6)},${f1(sy_ - hw * 0.6)} L${f1(nx - hw * 0.6)},${f1(sy_ + hw * 0.6)}" class="cs-tab" stroke-width="1.2"/>`);
+          continue;
+        }
+        if (h.f === 'roll') {
+          let yb = y + SPC * 4.24; const yt = y - SPC * 0.10;
+          const hs_ = n.hit.filter(q => !nonp(q.f) && q.s >= 0).map(q => q.s);
+          if (hs_.length) { nx = nx0 - SPC * 0.95; yb = y + SPC * (Math.max(...hs_) + 0.35); }
+          const amp = SPC * 0.16, half = SPC * 0.5;
+          let d = `M${f1(nx)},${f1(yb)}`;
+          let yy = yb, k = 0;
+          while (yy - half > yt) {
+            yy -= half;
+            d += ` Q${f1(nx + (k % 2 === 0 ? amp : -amp))},${f1(yy + half / 2)} ${f1(nx)},${f1(yy)}`;
+            k++;
+          }
+          d += ` L${f1(nx)},${f1(yt)}`;
+          out.push(`<path d="${d}" fill="none" class="cs-tab" stroke-width="1.5"/>`);
+          out.push(`<path d="M${f1(nx - SPC * 0.30)},${f1(yt + SPC * 0.70)} L${f1(nx)},${f1(yt)} L${f1(nx + SPC * 0.30)},${f1(yt + SPC * 0.70)}" fill="none" class="cs-tab" stroke-width="1.5"/>`);
+          continue;
+        }
+        const sy = y + h.s * SPC;
+        const off2 = get(h, 'off') || 0; offH = off2;
+        const dx = off2 * 12;
+        const nx2 = nx + dx;
+        if (dx) {
+          const [x_a, x_b] = dx < 0 ? [nx2, nx] : [nx, nx2];
+          out.push(`<path d="M${f1(x_a)},${f1(sy - 7.5)} q${f1((x_b - x_a) / 2)},-5.5 ${f1(x_b - x_a)},0" fill="none" class="cs-tab" stroke-width="1.2"/>`);
+        }
+        if (dx && get(h, 'lk') === 'sl') {
+          const mn_ = n.hit.filter(q => q.s === h.s && !T(q.grace) && !nonp(q.f));
+          let up_ = true;
+          if (mn_.length) {
+            const pi = v => typeof v === 'number' ? Math.trunc(v) : (/^\s*[+-]?\d+\s*$/.test(String(v)) ? parseInt(v, 10) : NaN);
+            const A = pi(mn_[0].f), B = pi(h.f);
+            up_ = (Number.isNaN(A) || Number.isNaN(B)) ? true : A >= B;
+          }
+          slide_line(out, nx2 - 1, nx + 1, sy, up_);
+        }
+        if (dx && ['H', 'P', 'sl'].indexOf(get(h, 'lk')) >= 0 && !(T(n.ham) || T(n.tech)))
+          tech_letter(out, nx + dx / 2, y, h.lk, T(row.tab_only) ? null : Math.min(sy - 13, y) - 1);
+        nx = nx2;
+        if (T(h.paren) && h.s >= 0 && !tied.has(bi + ',' + ni + ',' + h.s) && (h.s in last)) {
+          const xa_ = last[h.s] + 4, xb_ = nx - 10;
+          if (xb_ > xa_ + 3) {
+            const dy_ = h.s >= 3 ? 1 : -1;
+            const ty_ = sy + dy_ * SPC * 0.62;
+            out.push(`<path d="M${f1(xa_)},${f1(ty_)} Q${f1((xa_ + xb_) / 2)},${f1(ty_ + dy_ * 6)} ${f1(xb_)},${f1(ty_)}" fill="none" class="cs-tab" stroke-width="1.3"/>`);
+          }
+        }
+        if (T(h.lv)) out.push(`<path d="M${f1(nx + 3)},${f1(sy - SPC * 0.55)} q${f1(SPC * 0.55)},${f1(-SPC * 0.55)} ${f1(SPC * 1.1)},0" fill="none" class="cs-tab" stroke-width="1.3"/>`);
+        if (h.s >= 0 && !T(h.grace)) last[h.s] = nx;
+        const sm = T(h.grace);
+        const dk = `${pround(nx)}_${pround(sy)}`;
+        if (h.f === 'x') {
+          out.push(`<path data-k="${dk}" d="M${f1(nx - 4.2)},${pf(sy - 4.2)} L${f1(nx + 4.2)},${pf(sy + 4.2)} M${f1(nx + 4.2)},${pf(sy - 4.2)} L${f1(nx - 4.2)},${pf(sy + 4.2)}" class="cs-tab" stroke-width="1.5"/>`);
+        } else {
+          const fs = sm ? 10.5 : 14;
+          const lab_ = T(h.paren) ? '(' + h.f + ')' : h.f;
+          out.push(`<text data-k="${dk}" x="${f1(nx)}" y="${f1(sy + fs * 0.35)}" font-size="${fs}" text-anchor="middle" font-family="Helvetica" class="cf-tab">${lab_}</text>`);
+        }
+      }
+    });
+    for (let k = 0; k < b.holds; k++) {
+      const hx = x + offH + span * time_frac(b, sum(b.notes.map(n => n.dur)) + k);
+      out.push(`<rect x="${f1(hx - 7)}" y="${f1(y + TABH / 2 - 1.2)}" width="14" height="2.4" class="cf-tab"/>`);
+    }
+    x += bw;
+    barline(out, x, y, y + TABH, bi + 1 < bt.length ? bt[bi + 1] : 'bar', SPC, false, SPC * 0.26);
+  });
+  const sl_by = new Map();
+  for (const q of (row.slurs || [])) sl_by.set(q.b0 + ',' + q.n0, q.b1 + ',' + q.n1);
+  for (const hm of hams) {
+    let hx = hm.x;
+    if (hx === null) {
+      const tgt = sl_by.get(hm.bi + ',' + hm.ni);
+      const p2 = tgt ? npos.get(tgt) : null;
+      hx = p2 ? (hm.nx + p2[0]) / 2 : hm.nx;
+    }
+    out.push(`<text x="${f1(hx)}" y="${f1(y + SPC * 0.28 + SPC * 0.33)}" font-size="${f1(SPC * 0.84)}" text-anchor="middle" font-family="Helvetica" font-weight="700" class="cf-tab">${hm.ch === undefined ? 'H' : hm.ch}</text>`);
+  }
+  tab_slurs(out, row, npos, y);
+}
+
+function chord_box(out, x, y, grip, name, u) {
+  if (u === undefined) u = 7.7;
+  const gw = u * 5, gh = gw * 0.79;
+  out.push(`<text x="${f1(x + gw / 2)}" y="${f1(y - u * 1.5)}" text-anchor="middle" font-size="${f1(u * 1.9)}" font-weight="700" font-family="Helvetica" class="cf-chordname">${name}</text>`);
+  for (let i = 0; i < 6; i++)
+    out.push(`<line x1="${f1(x + i * u)}" y1="${f1(y)}" x2="${f1(x + i * u)}" y2="${f1(y + gh)}" class="cs-chorddiagram" stroke-width="0.9"/>`);
+  for (let k = 0; k < 4; k++) {
+    const yy = y + gh * k / 3;
+    out.push(`<line x1="${f1(x)}" y1="${f1(yy)}" x2="${f1(x + gw)}" y2="${f1(yy)}" class="cs-chorddiagram" stroke-width="${k === 0 ? 2.2 : 0.9}"/>`);
+  }
+  (grip || []).forEach((v, i) => {
+    const cx = x + i * u;
+    if (v === 'x') {
+      const r = u * 0.3;
+      out.push(`<path d="M${f1(cx - r)},${f1(y - u * 0.95 - r)} l${f1(2 * r)},${f1(2 * r)} M${f1(cx + r)},${f1(y - u * 0.95 - r)} l${f1(-2 * r)},${f1(2 * r)}" class="cs-chorddiagram" stroke-width="1.1"/>`);
+    } else if (v === '0') {
+      out.push(`<circle cx="${f1(cx)}" cy="${f1(y - u * 0.95)}" r="${f1(u * 0.3)}" fill="none" class="cs-chorddiagram" stroke-width="1.1"/>`);
+    } else {
+      out.push(`<circle cx="${f1(cx)}" cy="${f1(y + gh * (parseInt(v, 10) - 0.5) / 3)}" r="${f1(u * 0.36)}" class="cf-chorddiagram"/>`);
+    }
+  });
+}
+
+function house_bracket(out, x0, x1, y, num) {
+  out.push(`<path d="M${f1(x0)},${f1(y + 11)} L${f1(x0)},${f1(y)} L${f1(x1)},${f1(y)} L${f1(x1)},${f1(y + 11)}" fill="none" class="cs-house" stroke-width="1.6"/>`);
+  out.push(`<text x="${f1(x0 + 5)}" y="${f1(y + 13)}" font-size="13" font-weight="700" class="cf-house" font-family="Helvetica">${num}</text>`);
+}
+
+/* ================= draw.py ================= */
+const W = 1180, PAD = 34, ROW0 = 256, LYRH = 33, HOUSE = 22, DIGY = 220, LYR1 = 267, LYR2 = 300;
+const TABY = 89, SUBY = 86, CHY = 40, FS = 22;
+const DW = FS * 0.58, DCX = FS * 0.278, DTOP = FS * 0.72;
+const COLOR_CSS = '<style>' + '.cf-bg{fill:var(--sc-bg,#ffffff)}\n.cf-title{fill:var(--sc-title,#1c1a17)}\n.cs-title{stroke:var(--sc-title,#1c1a17)}\n.cf-text{fill:var(--sc-text,#555555)}\n.cs-text{stroke:var(--sc-text,#555555)}\n.cf-jianpu{fill:var(--sc-jianpu,#111111)}\n.cf-lyric{fill:var(--sc-lyric,#111111)}\n.cs-jianpu{stroke:var(--sc-jianpu,#111111)}\n.cf-tab{fill:var(--sc-tab,#111111)}\n.cs-tab{stroke:var(--sc-tab,#111111)}\n.cf-chordname{fill:var(--sc-chordname,#b4530e)}\n.cs-chordname{stroke:var(--sc-chordname,#b4530e)}\n.cf-chorddiagram{fill:var(--sc-chorddiagram,#333333)}\n.cs-chorddiagram{stroke:var(--sc-chorddiagram,#333333)}\n.cf-house{fill:var(--sc-house,#1c6b4a)}\n.cs-house{stroke:var(--sc-house,#1c6b4a)}' + '</style>';
+const TABY_T = TABY + 30, ROWT = 244;
+const taby = tonly => tonly ? TABY_T : TABY;
+const pystrip = s => s.replace(/^\s+|\s+$/g, '');
+
+function credits_line(d) {
+  const ly = pystrip(d.lyricist || ''), co = pystrip(d.composer || ''), ar = pystrip(d.artist || '');
+  const parts = [];
+  if (ly && ly === co) parts.push('词曲：' + ly);
+  else { if (ly) parts.push('词：' + ly); if (co) parts.push('曲：' + co); }
+  if (ar) parts.push(parts.length ? '演唱：' + ar : ar);
+  return parts.join('　');
+}
+
+function row_heights(d, tab) {
+  const rows = d.rows;
+  const nly = rows.map(r => { let m = 0; for (const b of r.bars) for (const n of b.notes) for (const k of [0, 1]) if (T(n['ly' + k])) m = Math.max(m, k + 1); return m; });
+  const hof = rows.map((_, ri) => (tab && ri < tab.rows.length && T(tab.rows[ri].houses)) ? HOUSE : 0);
+  const tonly = rows.map((_, ri) => !!(tab && ri < tab.rows.length && T(tab.rows[ri].tab_only)));
+  const tops = [], hs = []; let acc = 110;
+  nly.forEach((k, ri) => { const h = (tonly[ri] ? ROWT : ROW0 + k * LYRH) + hof[ri]; tops.push(acc); hs.push(h); acc += h; });
+  return [tops, hs, hof, nly, tonly, acc];
+}
+
+function render(d, tab) {
+  const sig = d.sig || (d.meta || {}).sig || '4/4';
+  UNIT = ['6/8', '9/8', '12/8'].indexOf(sig) >= 0 ? 1.5 : 1.0;
+  if (tab) prep_rows(tab.rows, d.rows, tab.rows.map((_, ri) => W - PAD * 2 - clef_width(ri === 0 ? d.sig : null)));
+  const rows = d.rows;
+  const [tops, , hof, , tonly, HH] = row_heights(d, tab);
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${HH}" font-family="Songti SC, serif">`];
+  out.push(COLOR_CSS);
+  out.push(`<rect width="${W}" height="${HH}" class="cf-bg"/>`);
+  out.push(`<text x="${pf(W / 2)}" y="46" text-anchor="middle" font-size="30" font-weight="700" font-family="PingFang SC, sans-serif" class="cf-title">${esc(d.title)}</text>`);
+  const sub = credits_line(d);
+  if (sub) out.push(`<text x="${pf(W / 2)}" y="${SUBY}" text-anchor="middle" font-size="17" font-family="PingFang SC, sans-serif" class="cf-text">${esc(sub)}</text>`);
+  let key = String(or(d.key, '')).split(' ').join('').split('＝').join('=');
+  if (key.startsWith('1=')) key = key.slice(2);
+  if (key) key = '1=' + key;
+  out.push(`<text x="${PAD}" y="${SUBY}" font-size="17" font-family="Helvetica" class="cf-text">${esc(key)}  ${esc(d.sig)}</text>`);
+  if (d.capo !== null && d.capo !== undefined && d.capo !== '')
+    out.push(`<text x="${W - PAD}" y="${SUBY}" text-anchor="end" font-size="15" font-family="PingFang SC, sans-serif" class="cf-text">Capo：${esc(get(d, 'capo', ''))}</text>`);
+  const bu = String(d.sig || '').trim().endsWith('/8') ? 2 : 1;
+  rows.forEach((r, ri) => {
+    const ytop = tops[ri], y = ytop + hof[ri];
+    const bars = r.bars;
+    const tot = sum(bars.map(bar_width)) || 1;
+    const cw = clef_width(ri === 0 ? d.sig : null);
+    let x = PAD + cw;
+    const avail = W - PAD * 2 - cw;
+    const trow = (tab && ri < tab.rows.length) ? tab.rows[ri] : null;
+    const bt = or(trow ? trow.bt : null, bars.map(() => 'bar').concat(['bar']));
+    if (!tonly[ri]) barline(out, PAD + cw, y + DIGY - 30, y + DIGY + 10, bt[0], 20, true, FS * 0.08, 'cs-jianpu');
+    const npos = new Map();
+    if (trow) {
+      tab_svg(trow, PAD, avail + cw, y + taby(tonly[ri]), out, true, ri === 0 ? d.sig : null);
+      const acc = [0.0];
+      for (const bb of bars) acc.push(acc[acc.length - 1] + bar_width(bb));
+      for (const h of (trow.houses || [])) {
+        if (h.b1 >= bars.length) continue;
+        const hx0 = PAD + cw + avail * acc[h.b0] / tot;
+        const hx1 = PAD + cw + avail * acc[h.b1 + 1] / tot;
+        house_bracket(out, hx0, hx1, ytop + 16, h.n);
+      }
+    }
+    bars.forEach((b, bi) => {
+      const bw = avail * bar_width(b) / tot;
+      const rb = sum(bars.slice(0, bi).map(q => q.beats));
+      const tb = (trow && bi < trow.bars.length) ? trow.bars[bi] : b;
+      if (T(b.chord)) {
+        const c0 = or(b.chords, [{}])[0];
+        chord_box(out, note_x(tb, bt, bi, x, bw, Number(or(get(c0, 'at'), 0)), tonly[ri]), y + CHY, get(b, 'grip'), esc(b.chord));
+      }
+      for (const cc of or(b.chords, []).slice(1)) {
+        const cx_ = note_x(tb, bt, bi, x, bw, Number(or(get(cc, 'at'), 0)), tonly[ri]);
+        chord_box(out, cx_, y + CHY, get(cc, 'grip'), esc(cc.name));
+      }
+      let acc = 0.0; const pos = [];
+      let off = bt[bi] === 'rep-start' ? 22 : 10;
+      if (T(b.notes) && T(get(b.notes[0], 'grace'))) off = Math.max(off, 26);
+      const rp = (bi + 1 < bt.length && (bt[bi + 1] === 'rep-end' || bt[bi + 1] === 'final')) ? 20 : 6;
+      const span = Math.max(10.0, bw - off - rp);
+      for (const n of b.notes) {
+        const nx = x + off + span * time_frac(b, acc);
+        pos.push([nx, acc]);
+        npos.set(bi + ',' + (pos.length - 1), nx);
+        acc += n.dur;
+      }
+      for (let k = 1; k < 4; k++) {
+        let i0 = 0;
+        while (i0 < b.notes.length) {
+          if (b.notes[i0].ul < k) { i0++; continue; }
+          let j = i0;
+          while (j + 1 < b.notes.length && b.notes[j + 1].ul >= k
+            && Math.trunc(pos[j + 1][1] / UNIT + 1e-6) === Math.trunc(pos[i0][1] / UNIT + 1e-6)) j++;
+          const uy = y + DIGY + 7 + (k - 1) * 5;
+          out.push(`<line x1="${f1(pos[i0][0] - 2)}" y1="${uy}" x2="${f1(pos[j][0] + DW)}" y2="${uy}" class="cs-jianpu" stroke-width="1.7"/>`);
+          i0 = j + 1;
+        }
+      }
+      b.notes.forEach((n, ni) => {
+        const nx = pos[ni][0];
+        if (n.deg === '-') out.push(`<text x="${f1(nx)}" y="${y + DIGY}" font-size="${FS}" font-family="Helvetica" class="cf-jianpu">—</text>`);
+        else if (n.deg === null || n.deg === undefined) out.push(`<text x="${f1(nx)}" y="${y + DIGY}" font-size="${FS}" fill="#D62828" font-family="Helvetica">?</text>`);
+        else {
+          out.push(`<text x="${f1(nx)}" y="${y + DIGY}" font-size="${FS}" font-family="Helvetica" class="cf-jianpu">${n.deg}</text>`);
+          if (n.oct > 0) out.push(`<circle cx="${f1(nx + DCX)}" cy="${f1(y + DIGY - DTOP - 7)}" r="2.2" class="cf-jianpu"/>`);
+          else if (n.oct < 0) out.push(`<circle cx="${f1(nx + DCX)}" cy="${y + DIGY + 12 + 4 * n.ul}" r="2.2" class="cf-jianpu"/>`);
+        }
+        for (const k of [0, 1]) {
+          const ch = get(n, 'ly' + k);
+          if (T(ch)) {
+            const yy = y + (k === 0 ? LYR1 : LYR2);
+            out.push(`<text x="${f1(nx + DCX)}" y="${yy}" font-size="21" text-anchor="middle" font-family="PingFang SC, sans-serif" class="cf-lyric" data-b="${gfmt((rb + pos[ni][1]) * bu)}" data-v="${k}">${esc(ch)}</text>`);
+          }
+        }
+        const g = get(n, 'grace');
+        if (T(g) && g.deg !== null && g.deg !== undefined) {
+          const gx = nx - 17, gy = y + DIGY - 20;
+          out.push(`<text x="${f1(gx)}" y="${f1(gy)}" font-size="15" font-family="Helvetica" class="cf-jianpu">${g.deg}</text>`);
+          for (let k = 0; k < g.ul; k++) {
+            const uy = gy + 4 + k * 3.6;
+            out.push(`<line x1="${f1(gx - 1)}" y1="${f1(uy)}" x2="${f1(gx + 9)}" y2="${f1(uy)}" class="cs-jianpu" stroke-width="1.2"/>`);
+          }
+          const hy = gy + 5 + g.ul * 3.6;
+          out.push(`<path d="M${f1(gx + 1)},${f1(hy)} q0,9 ${f1(nx - gx - 6)},5" fill="none" class="cs-jianpu" stroke-width="1.3"/>`);
+        }
+        if (T(get(n, 'acc'))) {
+          const sym = { '#': '♯', 'n': '♮', 'b': '♭' }[n.acc] || n.acc;
+          out.push(`<text x="${f1(nx - 2)}" y="${f1(y + DIGY - 12)}" font-size="15" text-anchor="end" font-family="Helvetica, Arial Unicode MS, sans-serif" class="cf-jianpu">${sym}</text>`);
+        }
+        if (T(n.dot)) out.push(`<circle cx="${f1(nx + DW + 3)}" cy="${f1(y + DIGY - FS * 0.27)}" r="2.2" class="cf-jianpu"/>`);
+      });
+      let ni = 0;
+      while (ni < b.notes.length) {
+        if (get(b.notes[ni], 'tup') === 3 && ni + 2 < b.notes.length && b.notes.slice(ni, ni + 3).every(q => get(q, 'tup') === 3)) {
+          const cx3 = (pos[ni][0] + pos[ni + 2][0] + DW) / 2;
+          out.push(`<text x="${f1(cx3)}" y="${f1(y + DIGY - DTOP - 11)}" font-size="11" text-anchor="middle" font-family="Helvetica" font-style="italic" class="cf-jianpu">3</text>`);
+          ni += 3;
+        } else ni++;
+      }
+      x += bw;
+      if (!tonly[ri]) barline(out, x, y + DIGY - 30, y + DIGY + 10, bi + 1 < bt.length ? bt[bi + 1] : 'bar', 20, false, FS * 0.08, 'cs-jianpu');
+    });
+    for (const s_ of (r.slurs || [])) {
+      if (T(get(s_, 'nxt')) || T(get(s_, 'prv'))) {
+        const ty = y + DIGY - DTOP - 13;
+        let d_;
+        if (T(get(s_, 'nxt'))) {
+          const a = npos.get(s_.b0 + ',' + s_.n0);
+          if (a === undefined) continue;
+          const x0 = a + 1, x1 = W - PAD + 4;
+          const cy = ty - Math.min(14, 8 + (x1 - x0) * 0.13);
+          d_ = `M${f1(x0)},${f1(ty)} Q${f1(x0 + (x1 - x0) * 0.45)},${f1(cy)} ${f1(x1)},${f1(cy + 2)}`;
+        } else {
+          const b = npos.get(s_.b1 + ',' + s_.n1);
+          if (b === undefined) continue;
+          const x0 = PAD + cw - 6, x1 = b + DW - 1;
+          const cy = ty - Math.min(14, 8 + (x1 - x0) * 0.13);
+          d_ = `M${f1(x0)},${f1(cy + 2)} Q${f1(x1 - (x1 - x0) * 0.45)},${f1(cy)} ${f1(x1)},${f1(ty)}`;
+        }
+        out.push(`<path d="${d_}" fill="none" class="cs-jianpu" stroke-width="1.6" stroke-linecap="round"/>`);
+        continue;
+      }
+      const a = npos.get(s_.b0 + ',' + s_.n0), b = npos.get(s_.b1 + ',' + s_.n1);
+      if (a === undefined || b === undefined || b <= a) continue;
+      const x0 = a + 1, x1 = b + DW - 1;
+      const ty = y + DIGY - DTOP - 13;
+      const cy = ty - Math.min(20, 8 + (x1 - x0) * 0.13);
+      out.push(`<path d="M${f1(x0)},${f1(ty)} Q${f1((x0 + x1) / 2)},${f1(cy)} ${f1(x1)},${f1(ty)}" fill="none" class="cs-jianpu" stroke-width="1.6" stroke-linecap="round"/>`);
+    }
+  });
+  out.push('</svg>');
+  return out.join('\n');
+}
+
+/* ================= seq.py ================= */
+function flatten(rows) {
+  const out = [];
+  rows.forEach((r, ri) => {
+    const bt = or(r.bt, r.bars.map(() => 'bar').concat(['bar']));
+    for (let bi = 0; bi < r.bars.length; bi++)
+      out.push({ r: ri, b: bi, left: bi < bt.length ? bt[bi] : 'bar', right: bi + 1 < bt.length ? bt[bi + 1] : 'bar' });
+  });
+  return out;
+}
+function expand(rows) {
+  const fl = flatten(rows), n = fl.length;
+  let s = fl.findIndex(b => b.left === 'rep-start'); if (s < 0) s = null;
+  let e = fl.findIndex(b => b.right === 'rep-end'); if (e < 0) e = null;
+  let hs = [], base = 0;
+  for (const r of rows) { for (const h of (r.houses || [])) hs.push([base + h.b0, base + h.b1, h.n]); base += r.bars.length; }
+  hs.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  if (e === null && !hs.length) return [range(n), new Map([[0, '全曲']]), fl];
+  const ends = fl.map((b, i) => b.right === 'rep-end' ? i : -1).filter(i => i >= 0);
+  if (ends.length >= 2) return _expand_multi(fl, ends, hs);
+  if (s === null) s = 0;
+  if (hs.length) {
+    hs = hs.map(([lo, hi, num], k) => { const nxt = k + 1 < hs.length ? hs[k + 1][0] : n; if (e !== null && hi < e && e < nxt) hi = e; return [lo, hi, num]; });
+    const common = range(s, hs[0][0]);
+    let seq = range(0, s);
+    const sec = new Map(); if (s > 0) sec.set(0, '前奏');
+    hs.forEach(([lo, hi], k) => { sec.set(seq.length, k === 0 ? '第 ' + (k + 1) + ' 遍' : '第 ' + (k + 1) + ' 遍 ↩ 反复'); seq = seq.concat(common, range(lo, hi + 1)); });
+    const tail = hs[hs.length - 1][1] + 1;
+    if (tail < n) { sec.set(seq.length, '尾段'); seq = seq.concat(range(tail, n)); }
+    return [seq, sec, fl];
+  }
+  const seq = range(0, e + 1).concat(range(s, e + 1), range(e + 1, n));
+  const sec = new Map();
+  if (s > 0) sec.set(0, '前奏');
+  sec.set(s, '第 1 遍');
+  sec.set(e + 1, '第 2 遍 ↩ 反复');
+  if (e + 1 + (e - s + 1) < seq.length) sec.set(e + 1 + (e - s + 1), '反复后 · 尾段');
+  return [seq, sec, fl];
+}
+function _expand_multi(fl, ends, hs) {
+  const n = fl.length; let seq = []; const sec = new Map(); let pos = 0;
+  ends.forEach((e, k) => {
+    let s = pos; for (let i = e; i > pos - 1; i--) if (fl[i].left === 'rep-start') { s = i; break; }
+    const h1 = hs.find(h => h[2] === 1 && s <= h[0] && h[0] <= e) || null;
+    const h2 = hs.find(h => h[2] === 2 && h[0] > e && (k + 1 >= ends.length || h[0] <= ends[k + 1])) || null;
+    if (k === 0 && s > 0) sec.set(0, '前奏');
+    else if (s > pos) { if (!sec.has(seq.length)) sec.set(seq.length, k ? '间段' : '前奏'); }
+    seq = seq.concat(range(pos, s));
+    const tag = k === 0 ? '' : '再反复 · ';
+    sec.set(seq.length, tag + '第 1 遍');
+    seq = seq.concat(range(s, e + 1));
+    sec.set(seq.length, tag + '第 2 遍 ↩ 反复');
+    if (h1 && h2) { seq = seq.concat(range(s, h1[0]), range(h2[0], h2[1] + 1)); pos = h2[1] + 1; }
+    else { seq = seq.concat(range(s, e + 1)); pos = e + 1; }
+  });
+  if (pos < n) { sec.set(seq.length, '尾段'); seq = seq.concat(range(pos, n)); }
+  return [seq, sec, fl];
+}
+
+/* ================= make_digital.py ================= */
+function digital(sc) {
+  const m = sc.meta;
+  const sp = (m.sig.split('/').concat(['4'])); const _n = sp[0], _d = sp[1];
+  const U = _d.trim() === '8' ? 2 : 1;
+  const PER = parseInt(_n, 10) * 4.0 / parseInt(_d, 10);
+  const clone = o => JSON.parse(JSON.stringify(o));          // 渲染会往小节上挂排版数据，别弄脏传进来的 score
+  const d = { title: m.title, artist: m.artist, lyricist: get(m, 'lyricist'), composer: get(m, 'composer'), key: m.key, sig: m.sig,
+    lyr_ref: get(m, 'lyr_ref'), bpm: m.bpm, capo: m.capo,
+    rows: sc.rows.map(r => ({ bars: clone(r.jp.bars), slurs: clone(r.jp.slurs) })) };
+  const t = { rows: sc.rows.map(r => Object.assign({ bars: clone(r.tab.bars), bt: r.bt, houses: r.houses, slurs: clone(r.tab.slurs) }, T(r.tab_only) ? { tab_only: true } : {})) };
+  const svg = render(d, t);
+  const rows = d.rows;
+  const [tops, rh, hof, , tonly, HH] = row_heights(d, t);
+  const S = v => pround(v);
+  const srows = [];
+  prep_rows(t.rows, d.rows, t.rows.map((_, ri) => W - PAD * 2 - clef_width(ri === 0 ? d.sig : null)));
+  t.rows.forEach((tr, ri) => {
+    const bars = tr.bars, bt = tr.bt;
+    const tot = sum(bars.map(bar_width));
+    const cw = clef_width(ri === 0 ? d.sig : null);
+    const x0 = PAD + cw, avail = W - PAD * 2 - cw;
+    const bl = [x0]; let x = x0;
+    for (const b of bars) { x += avail * bar_width(b) / tot; bl.push(x); }
+    let off = bt[0] === 'rep-start' ? 20 : 9;
+    if (T(bars[0].notes) && bars[0].notes[0].hit.some(h => get(h, 'off') === -1)) off = Math.max(off, 24);
+    const y0 = tops[ri], y = y0 + hof[ri];
+    const rep = []; bt.forEach((k, i) => { if (k === 'rep-start' || k === 'rep-end') rep.push({ x: S(bl[i]), t: k === 'rep-start' ? 'start' : 'end' }); });
+    const h1 = tr.houses.find(h => h.n === 1) || null;
+    const end = h1 ? { y: S(y0 + 16), x0: S(bl[h1.b0]), x1: S(bl[h1.b1 + 1]) } : null;
+    const nt = []; let xb = x0, beat0 = 0.0;
+    const TY = taby(tonly[ri]), ty = y + TY;
+    bars.forEach((b, bi) => {
+      const bw = avail * bar_width(b) / tot;
+      let o = bt[bi] === 'rep-start' ? 20 : 9;
+      if (T(b.notes) && b.notes[0].hit.some(h => get(h, 'off') === -1)) o = Math.max(o, 24);
+      const rp = (bi + 1 < bt.length && (bt[bi + 1] === 'rep-end' || bt[bi + 1] === 'final')) ? 17 : 4;
+      const span = Math.max(10.0, bw - o - rp);
+      let acc = 0.0;
+      const fr = note_frac(b.notes, b.beats, get(tr, 'tab_only'), b);
+      for (let i = 0; i < b.notes.length && i < fr.length; i++) {
+        const n = b.notes[i], f_ = fr[i];
+        const hs = n.hit.filter(h => !nonp(h.f) && !T(get(h, 'off')));
+        if (hs.length) {
+          const h = minBy(hs, h => h.s);
+          const cy = ty + h.s * SPC;
+          const top = cy - (h.f === 'x' ? 4.2 : 8.4);
+          nt.push([pround4((beat0 + acc) * U), S(xb + o + span * f_), S(top), S(cy)]);
+        } else if (n.hit.some(h => h.f === 'up' || h.f === 'down' || h.f === 'strum')) {
+          const h = n.hit.find(h => h.f === 'up' || h.f === 'down' || h.f === 'strum');
+          const cy = ty + get(h, 'a', 0.0) * SPC;
+          nt.push([pround4((beat0 + acc) * U), S(xb + o + span * f_), S(cy - 6), S(cy)]);
+        }
+        acc += n.dur;
+      }
+      xb += bw; beat0 += b.beats;
+    });
+    srows.push({ nt, y0: S(y0), y1: S(y0 + rh[ri]), sy0: S(y + TY), sy1: S(y + TY + TABH),
+      bl: bl.map(S), bb: bars.map(b => pround(b.beats * U)), m0: S(x0 + off), end, rep,
+      bs: [[S(hof[ri] + TY), S(hof[ri] + TY + TABH)]].concat(tonly[ri] ? [] : [[S(hof[ri] + DIGY - 30), S(hof[ri] + DIGY + 10)]]) });
+  });
+  const structure = { sig: d.sig, per: pround(PER * U), pages: [{ file: 'score.svg', w: W, h: HH, title: true, sig: d.sig, sigbox: null, rows: srows }] };
+
+  // ---- 演奏顺序 ----
+  const [q, sec, fl] = expand(t.rows);
+  const runs = [];
+  q.forEach((i, p_) => {
+    const r = fl[i].r, b = fl[i].b, L = runs[runs.length - 1];
+    if (L && L.r === r && L._b1 === b - 1 && !sec.has(p_)) L._b1 = b;
+    else runs.push({ r, _b0: b, _b1: b, sec: sec.has(p_) ? sec.get(p_) : null });
+  });
+  const merged = [];
+  for (const it of runs) {
+    const L = merged[merged.length - 1];
+    if (L && L.r === it.r && L._b1 === it._b0 - 1 && T(it.sec) && it.sec.indexOf('第 1 遍') >= 0) {
+      L._b1 = it._b1;
+      if (T(L.sec)) { L.sec = L.sec + ' · 第 1 遍'; L._play = L.sec; }
+      else { L.sec = it.sec.indexOf('再反复') >= 0 ? it.sec : null; L._play = it.sec; }
+    } else merged.push(it);
+  }
+  const seqo = merged.map(it => {
+    const n = t.rows[it.r].bars.length;
+    return { r: it.r, cut0: it._b0 || null, cut: it._b1 === n - 1 ? null : it._b1 + 1, sec: it.sec,
+      _play: ('_play' in it) ? it._play : it.sec, _b0: it._b0, _b1: it._b1 };
+  });
+  seqo.forEach((it, k_) => {
+    const hs = t.rows[it.r].houses;
+    if (hs.some(h => h.n === 2 && h.b0 === (it.cut0 || 0))) {
+      if (seqo.slice(k_ + 1).some(x => (x.sec || '').indexOf('反复') >= 0)) {
+        it.sec = '② 房子' + (T(it.sec) ? ' · ' + it.sec : '');
+        it._play = '② 房子' + (T(it._play) ? ' · ' + it._play : '');
+      } else { it.sec = it._play = '② 房子 · 尾段'; }
+    }
+  });
+  const seq_sheet = seqo.map(x => ({ r: x.r, cut0: x.cut0, cut: x.cut, sec: x.sec }));
+  const _has_lyr = x => d.rows[x.r].bars.slice(x._b0, x._b1 + 1).some(b => b.notes.some(n => T(n.ly0) || T(n.ly1)));
+  let _cur = null;
+  seqo.forEach(x => {
+    if (x._play !== null) _cur = x._play;
+    else if (_cur === '前奏' && _has_lyr(x)) { x._play = ''; _cur = ''; }
+  });
+  for (const x of seqo) { x.sec = x._play; delete x._play; delete x._b0; delete x._b1; }
+
+  // ---- 功能谱 ----
+  const sh = build_sheet(d, t, seq_sheet);
+  const _crop = ib => {
+    const boxes = ib.map(([ri, bi]) => [ri, bi, bi]);
+    return boxes.map(([ri, b0, b1], k_) => {
+      const sr = srows[ri];
+      const x0 = (b0 === 0 && k_ === 0) ? PAD - 2 : sr.bl[b0];
+      const x1 = sr.bl[b1 + 1] + (k_ === boxes.length - 1 ? 1 : 0);
+      const ya = sr.y0 + S(hof[ri]) + 4;
+      const yb = tonly[ri] ? sr.sy1 + STEM + 16 : sr.y0 + S(hof[ri] + DIGY + 27);
+      return [x0, ya, x1 - x0, yb - ya];
+    });
+  };
+  const ib = sh._intro_bars || []; delete sh._intro_bars;
+  if (ib.length) sh.intro_tab = { w: W, boxes: _crop(ib) };
+  const so = sh._solos || []; delete sh._solos;
+  if (so.length) sh.solos = so.map(x => ({ sec: x.sec, boxes: _crop(x.bars) }));
+  return { svg, w: W, h: HH, structure, seq: seqo, sheet: T(sh.lines) ? sh : null };
+}
+
+function build_sheet(d, t, seq) {
+  const chords = [], seen = new Set();
+  for (const r of d.rows) for (const b of r.bars)
+    for (const cc of or(b.chords, T(b.chord) ? [{ name: b.chord, grip: get(b, 'grip') }] : []))
+      if (T(cc.name) && !seen.has(cc.name)) { seen.add(cc.name); chords.push({ name: cc.name, grip: get(cc, 'grip') }); }
+  const rows = d.rows;
+  const nl = rows.map(r => { let m = 0; for (const b of r.bars) for (const n of b.notes) for (const k of [0, 1]) if (T(n['ly' + k])) m = Math.max(m, k + 1); return m; });
+  const reH = /[①②③④]\s*房子\s*[·•]?\s*/g, reR = /\s*↩.*$/;
+  let stream = []; const visits = {}; let last_ri = null, Tt = 0.0, prev_fill = false;
+  for (const it of seq) {
+    const ri = it.r;
+    if (ri >= rows.length) continue;
+    const vis = visits[ri] || 0;
+    const k = Math.min(vis, Math.max(0, nl[ri] - 1));
+    visits[ri] = vis + 1;
+    const b0 = it.cut0 || 0;
+    const b1 = (it.cut !== null && it.cut !== undefined) ? it.cut : rows[ri].bars.length;
+    let sec = it.sec || '';
+    const from_house = sec.indexOf('房子') >= 0 && ri === last_ri && b0 > 0;
+    sec = sec.replace(reH, '');
+    sec = pystrip(sec.replace(reR, ''));
+    let sec_bi = b0;
+    if (from_house) {
+      sec = '';
+      const rest = pystrip((it.sec || '').replace(reH, '').replace(reR, ''));
+      const btr = t.rows[ri].bt || [];
+      let sb = null; for (let bi = b0; bi < b1; bi++) if (bi < btr.length && btr[bi] === 'rep-start') { sb = bi; break; }
+      if (rest && sb !== null) { sec = rest; sec_bi = sb; }
+    }
+    const hs = or(t.rows[ri].houses, or(rows[ri].houses, [])).filter(h => parseInt(h.n || 1, 10) >= 2);
+    const rowbars = [];
+    for (let bi = b0; bi < b1; bi++) {
+      const b = rows[ri].bars[bi];
+      const in_house = hs.some(h => parseInt(h.b0, 10) <= bi && bi <= parseInt(h.b1, 10));
+      const ccs = or(b.chords, T(b.chord) ? [{ name: b.chord, at: 0.0 }] : []);
+      let kk = k; const n0 = b.notes.filter(n => T(n.ly0)).length;
+      if (k > 0 && !b.notes.some(n => T(n['ly' + k])) && (n0 >= 2 || (prev_fill && n0 >= 1) || (in_house && n0 >= 1))) kk = 0;
+      if (b.notes.some(n => T(n.ly0) || T(n.ly1))) {
+        const l0 = b.notes.map(n => n.ly0 || '').join(''), l1 = b.notes.map(n => n.ly1 || '').join('');
+        prev_fill = (kk === 0 && vis > 0) || (!!l0 && l0 === l1);
+      }
+      const syls = [], vn = []; let acc = 0.0;
+      for (const n of b.notes) {
+        const ch = get(n, 'ly' + kk);
+        if (T(ch)) syls.push([acc, n.dur, ch]);
+        if (String(n.deg === null || n.deg === undefined ? 'None' : n.deg) !== '0') vn.push([Tt + acc, Tt + acc + n.dur]);
+        acc += n.dur;
+      }
+      const dashes = syls.length === 1 ? range(Math.floor(syls[0][0]) + 1, Math.ceil(b.beats)) : [];
+      rowbars.push({ ri, bi, T: Tt, beats: b.beats, sec: bi === sec_bi ? sec : '', newrow: bi === b0,
+        chords: ccs.map(cc => [Number(or(get(cc, 'at'), 0)), cc.name]), syls, dashes, vn });
+      Tt += b.beats;
+    }
+    const has_ly = rowbars.some(bb => bb.syls.length);
+    for (const bb of rowbars) bb.rowly = has_ly;
+    stream = stream.concat(rowbars);
+    last_ri = ri;
+  }
+  const head = { title: d.title, key: or(d.key, ''), sig: or(d.sig, ''), capo: or(d.capo, ''), credits: credits_line(d), chords };
+  if (!stream.length) return Object.assign(head, { intro: [], lines: [] });
+
+  const seg_toks = (bar, s_from, s_to, open_bar) => {
+    const ev = [];
+    const a0 = s_from > 0 ? bar.syls[s_from][0] : -1.0;
+    const a1 = s_to < bar.syls.length ? bar.syls[s_to][0] : 1e9;
+    for (const [at, name] of bar.chords) if ((a0 <= at && at < a1) || (s_from === 0 && at < a1)) ev.push([at, 0, 'c', name]);
+    for (const [at, , ch] of bar.syls.slice(s_from, s_to)) ev.push([at, 1, 't', ch]);
+    for (const kb of bar.dashes) ev.push([kb, 1, 't', '-']);
+    ev.sort((x, y) => x[0] - y[0] || x[1] - y[1]);        // 稳定排序，和 Python sorted 一样
+    const toks = open_bar ? [{ bar: 1 }] : [];
+    let pend = null, pend_b = null;
+    for (const [beat, , kind, v] of ev) {
+      if (kind === 'c') { if (pend !== null) toks.push({ c: pend, t: '' }); pend = v; pend_b = beat; }
+      else if (pend !== null && beat - pend_b <= 0.26) { toks.push({ c: pend, t: v }); pend = null; }
+      else { if (pend !== null) { toks.push({ c: pend, t: '' }); pend = null; } toks.push({ c: '', t: v }); }
+    }
+    if (pend !== null) toks.push({ c: pend, t: '' });
+    return toks;
+  };
+  const lines = []; let cur = null;
+  const close = () => {
+    if (cur && cur.toks.length) {
+      if (cur.closed) cur.toks.push({ bar: 1 });
+      lines.push({ sec: cur.sec, inst: cur.nch === 0, toks: cur.toks, _rb: cur.rb });
+    }
+    cur = null;
+  };
+  const open_line = sec => {
+    if (sec === undefined) sec = null;
+    if (cur && !cur.toks.length && T(cur.sec) && !T(sec)) sec = cur.sec;
+    close();
+    cur = { sec, toks: [], nch: 0, closed: true, rb: [] };
+  };
+  const put = (bar, s_from, s_to, open_bar, closed) => {
+    cur.toks = cur.toks.concat(seg_toks(bar, s_from, s_to, open_bar));
+    cur.nch += s_to - s_from;
+    cur.rb.push([bar.ri, bar.bi, bar.syls.length > 0 && bar.syls[0][0] > 1e-6]);
+    cur.closed = closed;
+  };
+  const PER_LINE = 2;
+  const pars = []; let par = null, last_sec = null;
+  for (const bar of stream) {
+    if (T(bar.sec) && bar.sec !== last_sec) { if (par) pars.push(par); par = { sec: bar.sec, bars: [] }; last_sec = bar.sec; }
+    else if (par === null) par = { sec: null, bars: [] };
+    else if (bar.newrow && bar.rowly && !par.bars.some(bb => bb.syls.length)) { pars.push(par); par = { sec: null, bars: [] }; }
+    par.bars.push(bar);
+  }
+  if (par) pars.push(par);
+  for (const par of pars) {                 // 按小节换行（PER_LINE 个整小节一行）
+    const bars = par.bars, runs = [[]];
+    bars.forEach((bar, x) => {
+      if (x > 0 && bar.syls.length && !bars[x - 1].syls.length) runs.push([]);
+      else if (x > 0 && !bar.syls.length && bars[x - 1].syls.length && x + 1 < bars.length && !bars[x + 1].syls.length) runs.push([]);
+      runs[runs.length - 1].push(bar);
+      if (bar.syls.length && bar.syls[0][0] >= bar.beats / 2 && runs[runs.length - 1].length === 1 && x + 1 < bars.length) runs.push([]);
+    });
+    let first = true;
+    for (const run of runs)
+      for (let g = 0; g < run.length; g += PER_LINE) {
+        open_line(first ? par.sec : null); first = false;
+        for (const bar of run.slice(g, g + PER_LINE)) put(bar, 0, bar.syls.length, true, true);
+      }
+  }
+  close();
+
+  const intro = [];
+  while (lines.length && lines[0].inst) {
+    const ln = lines.shift();
+    if (intro.length) {
+      const it0 = intro[0].toks;
+      const tk = (it0.length && T(it0[it0.length - 1].bar) && ln.toks.length && T(ln.toks[0].bar)) ? ln.toks.slice(1) : ln.toks;
+      intro[0].toks = it0.concat(tk);
+    } else intro.push(ln);
+  }
+  if (lines.length) {
+    const tk = lines[0].toks;
+    const first = tk.findIndex(x => T(x.t) && x.t !== '-');
+    if (first >= 0) {
+      let cut = 0; tk.slice(0, first).forEach((x, i) => { if (T(x.bar)) cut = Math.max(cut, i); });
+      if (cut > 0) {
+        let head2 = tk.slice(0, cut);
+        if (!head2.some(x => T(x.c))) head2 = [];
+        if (head2.length) {
+          if (intro.length) {
+            const it0 = intro[0].toks;
+            if (it0.length && T(it0[it0.length - 1].bar) && T(head2[0].bar)) head2 = head2.slice(1);
+            intro[0].toks = it0.concat(head2, [{ bar: 1 }]);
+          } else intro.push({ sec: null, inst: true, toks: head2.concat([{ bar: 1 }]) });
+        }
+        lines[0].toks = tk.slice(cut);
+      }
+    }
+  }
+  if (intro.length) {
+    if (intro[0].sec !== '前奏' && lines.length && lines[0].sec === null) lines[0].sec = intro[0].sec;
+    intro[0].sec = '前奏';
+    if (lines.length && lines[0].sec === '前奏') lines[0].sec = null;
+  }
+  let cut = lines.findIndex(ln => T(ln.sec) && /第\s*2\s*遍/.test(ln.sec)); if (cut < 0) cut = null;
+  if (cut === null && lines.length > 3) {
+    const starts = lines.map((ln, i) => T(ln.sec) ? i : -1).filter(i => i >= 0);
+    const half = lines.length / 2.0;
+    cut = starts.length ? minBy(starts, i => Math.abs(i - half)) : pround(half);
+    if (cut === 0) cut = null;
+  }
+  lines.forEach((ln, i) => { ln.col = (cut !== null && i >= cut) ? 1 : 0; });
+  const solos = []; let i = 0;
+  while (i < lines.length) {
+    let j = i;
+    while (j < lines.length && lines[j].inst) j++;
+    const nb = sum(range(i, j).map(q => lines[q]._rb.length));
+    if (j > i && nb >= 2) {
+      const rb = []; for (let q2 = i; q2 < j; q2++) for (const x of lines[q2]._rb) rb.push(x);
+      if (j < lines.length && lines[j]._rb.length && lines[j]._rb[0][2]) rb.push(lines[j]._rb[0]);
+      const seen_ = [];
+      for (const [ri_, bi_] of rb) if (!seen_.some(s => s[0] === ri_ && s[1] === bi_)) seen_.push([ri_, bi_]);
+      for (let q2 = i; q2 < j; q2++) lines[q2].so = solos.length;
+      solos.push({ sec: j === lines.length ? '尾奏' : '间奏', bars: seen_ });
+    }
+    i = Math.max(j, i + 1);
+  }
+  for (const ln of lines) delete ln._rb;
+  for (const ln of intro) delete ln._rb;
+  const ib = [];
+  const has = (ri, bi) => ib.some(s => s[0] === ri && s[1] === bi);
+  for (const bar of stream) {
+    if (bar.syls.length) {
+      if (bar.syls[0][0] > 1e-6 && !has(bar.ri, bar.bi)) ib.push([bar.ri, bar.bi]);
+      break;
+    }
+    if (!has(bar.ri, bar.bi)) ib.push([bar.ri, bar.bi]);
+  }
+  return Object.assign(head, { intro, lines, _intro_bars: intro.length ? ib : [], _solos: solos });
+}
+
+/* ================= make_song.py：组装成播放器的一首歌 ================= */
+const PERS = { '4/4': 4, '3/4': 3, '2/4': 2, '2/2': 2, '6/8': 6, '9/8': 9, '12/8': 12, '3/8': 3 };
+/* doc = song.json（v3 矢量谱）：{id, title, key, bpm, sig?, score}。返回 {song, imgs}，和 make_song 出的一样 */
+function toSong(doc) {
+  const r = digital(doc.score);
+  const sig = doc.sig || r.structure.sig;
+  const per = PERS[sig] || 4;
+  const iid = 'vec-' + doc.id;
+  const pg = r.structure.pages[0];
+  const rows = pg.rows.map(x => {
+    const n = Math.max(0, x.bl.length - 1);
+    let bb = x.bb || [];
+    if (bb.length !== n || !bb.every(v => Number.isInteger(v) && v > 0)) bb = range(n).map(() => per);
+    return Object.assign({ p: 0, y0: x.y0, y1: x.y1, sy0: x.sy0, sy1: x.sy1, bl: x.bl, bb, m0: get(x, 'm0'), bs: get(x, 'bs'),
+      end: get(x, 'end'), rep: x.rep || [] }, T(x.nt) ? { nt: x.nt } : {});
+  });
+  const song = { title: doc.title, key: doc.key || '', sig, bpm: doc.bpm || 68,
+    pages: [{ a: iid, w: pg.w, h: pg.h, sb: pg.sigbox, sig: pg.sig }], rows, seq: r.seq };
+  if (r.sheet) song.sheet = r.sheet;
+  return { song, imgs: { [iid]: 'data:image/svg+xml,' + encodeURIComponent(r.svg) }, svg: r.svg };
+}
+
+const API = { render, digital, toSong, build_sheet, expand, _fmt: { fx, pf, pround, pround4, gfmt } };
+G.VecRender = API;
+if (typeof module !== 'undefined' && module.exports) module.exports = API;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+</head><body><script>
+/* ===== 器数分离：play.html 是纯播放器，按 ?id= 从 songs/<id>/song.json 取这一首（sitectl.py build 生成） =====
    同步取（XHR 同步）：后面的播放器脚本一加载就要读 window.__SEED，晚一步就是空白页。
-   本地双击 play.html（file://）浏览器不让读文件——本地用 site.py export 导出的离线 HTML。 */
+   本地双击 play.html（file://）浏览器不让读文件——本地用 sitectl.py export 导出的离线 HTML。 */
 (function(){
   var q=location.search, m=/[?&]id=(sg-[0-9a-f]{6,})/.exec(q), v=/[?&]v=([0-9a-f]+)/.exec(q);
   if(!m){ location.replace('index.html'); return; }
@@ -9,13 +1053,19 @@
   function get(u){ var x=new XMLHttpRequest(); x.open('GET',u,false); x.send(); if(x.status&&x.status!==200) throw new Error(x.status); return x.responseText; }
   try{
     var doc=JSON.parse(get(base+'song.json'+vs)), imgs={};
-    for(var k in doc.files){
-      var fn=doc.files[k];
-      /* 矢量谱面要解析进 DOM（不是当背景图贴），连文字一起取来；图片谱只给地址，播放时浏览器才去下载 */
-      imgs[k]=/\.svg$/.test(fn) ? 'data:image/svg+xml,'+encodeURIComponent(get(base+fn+vs)) : base+fn+vs;
+    if(doc.score){                        /* 矢量谱（v3）：只有语义谱，离线后端 shim 交给 VecRender 现场画 */
+      window.__SEED={id:id, song:doc, imgs:{}};
+    }else{
+      for(var k in doc.files){
+        var fn=doc.files[k];
+        /* 图片谱只给地址，播放时浏览器才去下载；万一是老的 SVG 谱面文件，连文字取来（要解析进 DOM） */
+        imgs[k]=/\.svg$/.test(fn) ? 'data:image/svg+xml,'+encodeURIComponent(get(base+fn+vs)) : base+fn+vs;
+      }
+      window.__SEED={id:id, song:doc.song, imgs:imgs};
     }
-    window.__SEED={id:id, song:doc.song, imgs:imgs};
-    if(doc.title) document.title=doc.title+' · VectorTAB';
+    /* 标题格式用户 2026-10-30 定（同 make_song.page_title）：吉他弹唱《成都》动态吉他谱·矢量版（VectorTAB制作） */
+    var t=doc.title||'', vec=doc.kind==='vector';
+    if(t) document.title='吉他'+(t.indexOf('指弹')>=0?'指弹':'弹唱')+'《'+t.replace(/（(矢量版|数字谱|指弹谱)）/g,'')+'》动态吉他谱'+(vec?'·矢量版':'')+'（VectorTAB制作）';
   }catch(e){ window.__LOADERR=String(e&&e.message||e); }
   window.__BOOT=id;                       /* 取不到时播放器会提示「数据没能载入」，不留空白 */
 })();
@@ -33,10 +1083,19 @@
     try{
       var sd=window.__SEED;
       var pack = sd.songs || (sd.id ? (function(){var o={};o[sd.id]=sd.song;return o;})() : {});
-      window.__SEEDN = Object.keys(pack).length;
-      window.__SEEDIDS = Object.keys(pack);        /* 给曲库页标注哪些是随文件带来的 */
       var si=sd.imgs||{};
       for(var sk in si) IMG[sk]=si[sk];            /* 图片先并进来，下面要靠它判断 */
+      /* 器数分离第二期：矢量谱只带语义谱（song.json v3：{id,title,key,bpm,score}），打开时现场画——
+         VecRender（<head> 里内联的 vecrender.js）出 SVG + 行几何 + 演奏顺序 + 功能谱，和 Python 那套逐字节一致 */
+      for(var vk in pack){
+        var dv=pack[vk];
+        if(dv && dv.score){
+          try{ var vr=window.VecRender.toSong(dv); pack[vk]=vr.song; for(var ik in vr.imgs) IMG[ik]=vr.imgs[ik]; }
+          catch(e){ delete pack[vk]; window.__LOADERR='谱面渲染出错：'+(e&&e.message||e); }
+        }
+      }
+      window.__SEEDN = Object.keys(pack).length;
+      window.__SEEDIDS = Object.keys(pack);        /* 给曲库页标注哪些是随文件带来的 */
       /* 文件永远赢。
          以前的写法是「本机那份的图片还找得着就保留本机的」，意图是保住用户自己的改动。
          但本地改谱的入口早就去掉了，localStorage 在这里只是缓存，不该有话语权。
