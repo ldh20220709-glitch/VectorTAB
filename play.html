@@ -459,12 +459,13 @@ function house_bracket(out, x0, x1, y, num) {
 }
 
 /* ================= draw.py ================= */
-const W = 1180, PAD = 34, ROW0 = 256, LYRH = 33, HOUSE = 22, DIGY = 220, LYR1 = 270, LYR2 = 304, LYFS = 24;   // 歌词 24 号（原 21 号 267/300）
+const TOPPAD = 12;   // 每行行头留白：和弦名别伸出行顶（播放器按行切条会切成两半），也让开房子编号
+const W = 1180, PAD = 34, ROW0 = 248, LYRH = 33, HOUSE = 20, HOUSEY = 8, DIGY = 220, LYR1 = 270, LYR2 = 304, LYFS = 24;   // 歌词 24 号（原 21 号 267/300）
 const CHB = 65;                                  // 和弦图下沿距行顶：按下沿定位，放大只往上长
 const TABY = 89, SUBY = 86, CHY = CHB - CHU * 5 * 0.79, FS = 22;
 const DW = FS * 0.58, DCX = FS * 0.278, DTOP = FS * 0.72;
 const COLOR_CSS = '<style>' + '.cf-bg{fill:var(--sc-bg,#ffffff)}\n.cf-title{fill:var(--sc-title,#1c1a17)}\n.cs-title{stroke:var(--sc-title,#1c1a17)}\n.cf-text{fill:var(--sc-text,#555555)}\n.cs-text{stroke:var(--sc-text,#555555)}\n.cf-jianpu{fill:var(--sc-jianpu,#111111)}\n.cf-lyric{fill:var(--sc-lyric,#111111)}\n.cs-jianpu{stroke:var(--sc-jianpu,#111111)}\n.cf-tab{fill:var(--sc-tab,#111111)}\n.cs-tab{stroke:var(--sc-tab,#111111)}\n.cf-chordname{fill:var(--sc-chordname,#b4530e)}\n.cs-chordname{stroke:var(--sc-chordname,#b4530e)}\n.cf-chorddiagram{fill:var(--sc-chorddiagram,#333333)}\n.cs-chorddiagram{stroke:var(--sc-chorddiagram,#333333)}\n.cf-house{fill:var(--sc-house,#1c6b4a)}\n.cs-house{stroke:var(--sc-house,#1c6b4a)}' + '</style>';
-const TABY_T = TABY + 30, ROWT = 244;
+const TABY_T = TABY + 30, ROWT = 228;   // 行高 256→248、244→228（行头加了 TOPPAD，底部余白收回）
 const taby = tonly => tonly ? TABY_T : TABY;
 const pystrip = s => s.replace(/^\s+|\s+$/g, '');
 
@@ -480,11 +481,28 @@ function credits_line(d) {
 function row_heights(d, tab) {
   const rows = d.rows;
   const nly = rows.map(r => { let m = 0; for (const b of r.bars) for (const n of b.notes) for (const k of [0, 1]) if (T(n['ly' + k])) m = Math.max(m, k + 1); return m; });
-  const hof = rows.map((_, ri) => (tab && ri < tab.rows.length && T(tab.rows[ri].houses)) ? HOUSE : 0);
+  const hof = rows.map((_, ri) => TOPPAD + ((tab && ri < tab.rows.length && T(tab.rows[ri].houses)) ? HOUSE : 0));
   const tonly = rows.map((_, ri) => !!(tab && ri < tab.rows.length && T(tab.rows[ri].tab_only)));
   const tops = [], hs = []; let acc = 110;
-  nly.forEach((k, ri) => { const h = (tonly[ri] ? ROWT : ROW0 + k * LYRH) + hof[ri]; tops.push(acc); hs.push(h); acc += h; });
+  nly.forEach((k, ri) => {
+    const h = hof[ri] + Math.ceil(content_bottom(rows[ri], (tab && ri < tab.rows.length) ? tab.rows[ri] : null, k, tonly[ri])) + ROWGAP;
+    tops.push(acc); hs.push(h); acc += h; });
   return [tops, hs, hof, nly, tonly, acc];
+}
+const ROWGAP = 4;    // 行内最低的东西到行底的留白：行高按实际内容算（2026-10-30「行距缩小一半」）
+function content_bottom(jr, tr, nly, tonly_row) {
+  if (tonly_row) {
+    const tup = tr !== null && tr.bars.some(b => b.notes.some(n => T(get(n, 'tup'))));
+    return TABY_T + SPC * 5 + STEM + (tup ? 14 : 0);
+  }
+  let cb = DIGY + 10;
+  for (const b of jr.bars) for (const n of b.notes) {
+    const ul = n.ul || 0;
+    if (ul) cb = Math.max(cb, DIGY + 7 + (ul - 1) * 5 + 1);
+    if (n.deg !== null && n.deg !== undefined && n.deg !== '-' && (n.oct || 0) < 0) cb = Math.max(cb, DIGY + 12 + 4 * ul + 2.2);
+  }
+  if (nly >= 1) cb = Math.max(cb, (nly === 1 ? LYR1 : LYR2) + 5);
+  return cb;
 }
 
 function render(d, tab) {
@@ -525,7 +543,7 @@ function render(d, tab) {
         if (h.b1 >= bars.length) continue;
         const hx0 = PAD + cw + avail * acc[h.b0] / tot;
         const hx1 = PAD + cw + avail * acc[h.b1 + 1] / tot;
-        house_bracket(out, hx0, hx1, ytop + 16, h.n);
+        house_bracket(out, hx0, hx1, ytop + HOUSEY, h.n);
       }
     }
     bars.forEach((b, bi) => {
@@ -727,7 +745,7 @@ function digital(sc) {
     const y0 = tops[ri], y = y0 + hof[ri];
     const rep = []; bt.forEach((k, i) => { if (k === 'rep-start' || k === 'rep-end') rep.push({ x: S(bl[i]), t: k === 'rep-start' ? 'start' : 'end' }); });
     const h1 = tr.houses.find(h => h.n === 1) || null;
-    const end = h1 ? { y: S(y0 + 16), x0: S(bl[h1.b0]), x1: S(bl[h1.b1 + 1]) } : null;
+    const end = h1 ? { y: S(y0 + HOUSEY), x0: S(bl[h1.b0]), x1: S(bl[h1.b1 + 1]) } : null;
     const nt = []; let xb = x0, beat0 = 0.0;
     const TY = taby(tonly[ri]), ty = y + TY;
     bars.forEach((b, bi) => {
@@ -809,7 +827,7 @@ function digital(sc) {
       const sr = srows[ri];
       const x0 = (b0 === 0 && k_ === 0) ? PAD - 2 : sr.bl[b0];
       const x1 = sr.bl[b1 + 1] + (k_ === boxes.length - 1 ? 1 : 0);
-      const ya = sr.y0 + S(hof[ri]) + 1;
+      const ya = sr.y0 + S(hof[ri] - TOPPAD) + 1;
       const yb = tonly[ri] ? sr.sy1 + STEM + 16 : sr.y0 + S(hof[ri] + DIGY + 27);
       return [x0, ya, x1 - x0, yb - ya];
     });
