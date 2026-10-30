@@ -78,7 +78,7 @@ function tab_slurs(out, row, npos, y) {
     const ends_ = [[s_.b0, s_.n0], [s_.b1, s_.n1]].filter(([bb, nn]) => bb < row.bars.length && nn < row.bars[bb].notes.length)
       .map(([bb, nn]) => row.bars[bb].notes[nn]);
     if (['H', 'P', 'sl'].indexOf(k) >= 0 && !ends_.some(e => T(e.ham) || T(e.tech)))
-      tech_letter(out, (a[0] + b[0]) / 2, y, k, T(row.tab_only) ? null : Math.min(cy, y) - 1);
+      tech_letter(out, (a[0] + b[0]) / 2, y, k, T(row.tab_only) ? null : Math.min((ty + cy) / 2, y));   // 贴着弧顶写（2026-10-30 下移约 6px）
   }
 }
 
@@ -385,7 +385,7 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
           slide_line(out, nx2 - 1, nx + 1, sy, up_);
         }
         if (dx && ['H', 'P', 'sl'].indexOf(get(h, 'lk')) >= 0 && !(T(n.ham) || T(n.tech)))
-          tech_letter(out, nx + dx / 2, y, h.lk, T(row.tab_only) ? null : Math.min(sy - 13, y) - 1);
+          tech_letter(out, nx + dx / 2, y, h.lk, T(row.tab_only) ? null : Math.min(sy - 10.25, y));
         nx = nx2;
         if (T(h.paren) && h.s >= 0 && !tied.has(bi + ',' + ni + ',' + h.s) && (h.s in last)) {
           const xa_ = last[h.s] + 4, xb_ = nx - 10;
@@ -429,8 +429,9 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
   tab_slurs(out, row, npos, y);
 }
 
+const CHU = 9.0;     // 和弦图弦距（2026-10-30 iPad 上太小：7.7 → 9.0）
 function chord_box(out, x, y, grip, name, u) {
-  if (u === undefined) u = 7.7;
+  if (u === undefined) u = CHU;
   const gw = u * 5, gh = gw * 0.79;
   out.push(`<text x="${f1(x + gw / 2)}" y="${f1(y - u * 1.5)}" text-anchor="middle" font-size="${f1(u * 1.9)}" font-weight="700" font-family="Helvetica" class="cf-chordname">${name}</text>`);
   for (let i = 0; i < 6; i++)
@@ -459,7 +460,8 @@ function house_bracket(out, x0, x1, y, num) {
 
 /* ================= draw.py ================= */
 const W = 1180, PAD = 34, ROW0 = 256, LYRH = 33, HOUSE = 22, DIGY = 220, LYR1 = 267, LYR2 = 300;
-const TABY = 89, SUBY = 86, CHY = 40, FS = 22;
+const CHB = 65;                                  // 和弦图下沿距行顶：按下沿定位，放大只往上长
+const TABY = 89, SUBY = 86, CHY = CHB - CHU * 5 * 0.79, FS = 22;
 const DW = FS * 0.58, DCX = FS * 0.278, DTOP = FS * 0.72;
 const COLOR_CSS = '<style>' + '.cf-bg{fill:var(--sc-bg,#ffffff)}\n.cf-title{fill:var(--sc-title,#1c1a17)}\n.cs-title{stroke:var(--sc-title,#1c1a17)}\n.cf-text{fill:var(--sc-text,#555555)}\n.cs-text{stroke:var(--sc-text,#555555)}\n.cf-jianpu{fill:var(--sc-jianpu,#111111)}\n.cf-lyric{fill:var(--sc-lyric,#111111)}\n.cs-jianpu{stroke:var(--sc-jianpu,#111111)}\n.cf-tab{fill:var(--sc-tab,#111111)}\n.cs-tab{stroke:var(--sc-tab,#111111)}\n.cf-chordname{fill:var(--sc-chordname,#b4530e)}\n.cs-chordname{stroke:var(--sc-chordname,#b4530e)}\n.cf-chorddiagram{fill:var(--sc-chorddiagram,#333333)}\n.cs-chorddiagram{stroke:var(--sc-chorddiagram,#333333)}\n.cf-house{fill:var(--sc-house,#1c6b4a)}\n.cs-house{stroke:var(--sc-house,#1c6b4a)}' + '</style>';
 const TABY_T = TABY + 30, ROWT = 244;
@@ -807,7 +809,7 @@ function digital(sc) {
       const sr = srows[ri];
       const x0 = (b0 === 0 && k_ === 0) ? PAD - 2 : sr.bl[b0];
       const x1 = sr.bl[b1 + 1] + (k_ === boxes.length - 1 ? 1 : 0);
-      const ya = sr.y0 + S(hof[ri]) + 4;
+      const ya = sr.y0 + S(hof[ri]) + 1;
       const yb = tonly[ri] ? sr.sy1 + STEM + 16 : sr.y0 + S(hof[ri] + DIGY + 27);
       return [x0, ya, x1 - x0, yb - ya];
     });
