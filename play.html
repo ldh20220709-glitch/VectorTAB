@@ -311,7 +311,6 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
       out.push(`<text x="${f1(xm)}" y="${f1(yb_ + 4)}" font-size="${f1(SPC * 1.0)}" text-anchor="middle" font-family="Times New Roman, serif" font-style="italic" class="cf-tab">3</text>`);
       ni = grp[grp.length - 1] + 1;
     }
-    let offH = off;      /* Python 原版音头循环里的 off = h.get('off') or 0 覆盖了小节的 off，下面延音杠用的是被覆盖后的值（线上谱面就是这样，照样复刻） */
     pos.forEach(([nx0], ni) => {
       const n = b.notes[ni];
       if (T(n.acc)) accent(out, nx0, y);
@@ -368,7 +367,7 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
           continue;
         }
         const sy = y + h.s * SPC;
-        const off2 = get(h, 'off') || 0; offH = off2;
+        const off2 = get(h, 'off') || 0;
         const dx = off2 * 12;
         const nx2 = nx + dx;
         if (dx) {
@@ -410,7 +409,7 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
       }
     });
     for (let k = 0; k < b.holds; k++) {
-      const hx = x + offH + span * time_frac(b, sum(b.notes.map(n => n.dur)) + k);
+      const hx = x + off + span * time_frac(b, sum(b.notes.map(n => n.dur)) + k);
       out.push(`<rect x="${f1(hx - 7)}" y="${f1(y + TABH / 2 - 1.2)}" width="14" height="2.4" class="cf-tab"/>`);
     }
     x += bw;
@@ -1320,8 +1319,11 @@ input[type=text],input[type=number]{font-family:var(--cjk);font-size:13px;color:
 #scGear:hover,#scGear[aria-expanded="true"]{color:var(--accent)}
 #scGear:hover svg{transform:rotate(30deg)}
 #scGear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-#scPanel{position:absolute;top:calc(100% + 6px);right:10px;z-index:20;
-     max-height:calc(100dvh - 90px);overflow-y:auto;overscroll-behavior:contain;   /* 矮屏（手机横屏）面板自己滚，不把整页顶上去 */
+/* 面板钉在窗口上（用户 2026-10-30：顶栏/底栏自动收放时面板跟着动，不好操作）：
+   原来挂在 #bar 里 absolute，顶栏收起（.lean 负 margin）就被带上去，还继承了 pointer-events:none 点不动。
+   现在 fixed 在「顶栏展开时的下沿」（--barH，JS 只在顶栏展开时量），收放都不动；pointer-events 显式打开 */
+#scPanel{position:fixed;top:calc(var(--barH,46px) + 6px);right:10px;z-index:30;pointer-events:auto;
+     max-height:calc(100dvh - var(--barH,46px) - 46px);   /* 扣掉上下 padding 14+14、边框 2、离底 16 */overflow-y:auto;overscroll-behavior:contain;   /* 矮屏（手机横屏）面板自己滚，不把整页顶上去 */
     width:240px;max-width:calc(100% - 20px);
      background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;
      box-shadow:var(--shadow);font-family:var(--cjk)}
