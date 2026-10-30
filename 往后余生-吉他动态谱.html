@@ -2549,7 +2549,7 @@ boot();
       return `<div class="ln${l.inst?' inst':''}">${l.sec?`<div class="sec">${esc(l.sec)}</div>`:''}<div class="toks">${toks}</div></div>`;
     };
     /* 前奏整页横排第一行；歌词按段（段名处）切块，第 2 遍一定另起一栏（用户 2026-10-29「第一段结束之后第二段从右边开始」）。
-       分 1/2/3 栏按内容定（用户 2026-10-30）：开窗后量最宽一句和每块高度，见下面 colfit() */
+       分 1/2/3 栏、在哪段切按内容定（用户 2026-10-30）：开窗后量最宽一句和每块高度，见下面 colfit() */
     const intro=(sh.intro||[]).map(line1).join('');
     const L=sh.lines||[], segs=[];
     L.forEach((l,i)=>{ if(!segs.length || l.sec || (l.col&&!L[i-1].col)) segs.push({c:l.col?1:0,h:''}); segs[segs.length-1].h+=line1(l); });
@@ -2596,7 +2596,7 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${so?'<butt
 <div class="page"><h1>${esc(sh.title||title)}</h1><div class="meta"><span>${esc(meta)}</span><span>${esc(sh.credits||'')}</span></div>
 <div class="chords">${chords}</div>${lines}</div><script>(${colfit.toString()})();${so?`(${soloSw.toString()})()`:''}<\/script></body></html>`;
   }
-  /* 在功能谱窗口里跑：按内容定 1/2/3 栏。只在段名处切栏，第 2 遍（data-c 从 0 变 1）必须是一个切点；
+  /* 在功能谱窗口里跑：按内容定 1/2/3 栏。只在段名处切栏（段不拆开）；
      多一栏的前提：最宽一句在那个栏宽里不折行，且最高那栏比少一栏时矮 15% 以上（不为一两行去挤） */
   function colfit(){
     const box=document.getElementById('cols'); if(!box) return;
@@ -2604,12 +2604,14 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${so?'<butt
     const lineW=ln=>[...ln.querySelectorAll('.ms')].reduce((a,m)=>a+m.offsetWidth+parseFloat(getComputedStyle(m).marginRight||0),0);
     const maxW=Math.max(0,...[...box.querySelectorAll('.ln')].map(lineW))+4;
     const hs=segs.map(g=>g.offsetHeight), W=box.clientWidth;
-    const must=segs.findIndex(g=>g.dataset.c==='1');           // 第 2 遍起头的块；-1 = 没有
+    /* 原来强制「第 2 遍另起一栏」：成都左栏只有第 1 遍、右栏第 2 遍 + 尾段，一短一长。
+       用户 2026-10-30：「第2段放左边，尾段保留在右边」——不再强制，只在段名处切、按最高一栏最矮选 */
+    const must=-1;
     const gapPx=k=>{ const d=document.createElement('div'); d.style.width=(k===3?5:7)+'mm'; document.body.appendChild(d); const v=d.offsetWidth; d.remove(); return v; };
     let best=null;
     for(let k=1;k<=3;k++){
       if(k>segs.length || (k===1 && must>0)) continue;
-      if(k>1 && maxW>(W-(k-1)*gapPx(k))/k) continue;
+      if(k===3 && maxW>(W-2*gapPx(3))/3) continue;   // 两栏照旧（个别长句折一行能接受），三栏才要求最宽一句放得下
       /* 枚举 k-1 个切点（块之间），取最高一栏最矮的 */
       const n=segs.length; let bk=null;
       const rec=(st,left,cuts)=>{
