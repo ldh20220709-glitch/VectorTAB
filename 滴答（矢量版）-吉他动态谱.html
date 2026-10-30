@@ -93,7 +93,7 @@
   --ground:#EFEBE3; --panel:#FDFCFA; --ink:#1C1A17; --muted:#6E665C; --line:#D9D2C5;
   --accent:#C06A22; --accent-ink:#FFF7EE; --rail:#E0D8CA; --paper:#FFFFFF;
   --accent-soft:rgba(192,106,34,.22); --scrim:rgba(239,235,227,.80);
-  --cue:#D62828; --cue-soft:rgba(214,40,40,.065); --cue-glow:rgba(214,40,40,.42);
+  --cue:#D62828; --cue-soft:rgba(40,130,220,.08); /* 默认模式当前行底色：淡蓝（用户 2026-10-30，原淡红 rgba(214,40,40,.065)） */ --cue-glow:rgba(214,40,40,.42);
   --ok:#2F7D56; --leanT:1s;
   --shadow:0 1px 2px rgba(28,26,23,.10),0 8px 28px rgba(28,26,23,.10);
   /* 纯系统字体栈，零外部请求 */
@@ -418,7 +418,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
       box-shadow:0 0 12px var(--cue-glow);z-index:4;pointer-events:none;display:none}
 #stage.ribbon ~ #line{display:block}
 #band{position:absolute;left:0;width:100%;background:var(--cue-soft);pointer-events:none;display:none;z-index:1}
-/* 选段循环：暂停时鼠标点/拖小节选中，播放就只循环这几小节。颜色另起一套（蓝），和红色的游标、行高亮分开 */
+/* 选段循环：暂停时鼠标长按/拖小节选中（单击是播放），播放就只循环这几小节。颜色另起一套（蓝），和红色的游标、行高亮分开 */
 .selbar{position:absolute;pointer-events:none;z-index:2;border-radius:3px;
         background:rgba(37,99,235,.13);box-shadow:inset 0 0 0 2px rgba(37,99,235,.6)}
 .selbar.head::before{content:"循环";position:absolute;left:0;top:-17px;font:600 11px/15px system-ui,sans-serif;
@@ -1733,10 +1733,13 @@ function karaPaint(a){
           e.style.transformOrigin=(+e.getAttribute('x'))+'px '+(+e.getAttribute('y')-fs*0.36)+'px';
           return {e, b:+e.dataset.b, v:+e.dataset.v||0}; });
       st._lyV=st._ly.reduce((x,q)=>Math.max(x,q.v),0);
-      /* 第 2 段词常常只印了不同的那几个字，副歌（滴答滴答…）只印在第 1 行：
-         某拍上本段没词、第 1 行有，就亮第 1 行的 */
-      const has=new Set(st._ly.filter(q=>q.v>0).map(q=>q.v+'@'+q.b));
-      st._ly.forEach(q=>q.sh=q.v===0 ? (w=>!has.has(w+'@'+q.b)) : null);
+      /* 副歌（滴答滴答…）只印在第 1 行：某小节里本段一个字都没印，就亮第 1 行的。
+         按小节判，不按拍判——第 2 段词在某拍上拖音没字（弯弯的月亮「我——的脸上」对「弯弯的小桥」）时，
+         按拍判会把第 1 行那拍的「弯」也亮起来，两段词串行（用户 2026-10-30 截图） */
+      const cum=[0]; rr.bb.forEach(w=>cum.push(cum[cum.length-1]+w));
+      const barOf=b=>{ let k=0; while(k<cum.length-2 && b>=cum[k+1]-1e-6) k++; return k; };
+      const has=new Set(st._ly.filter(q=>q.v>0).map(q=>q.v+'@'+barOf(q.b)));
+      st._ly.forEach(q=>q.sh=q.v===0 ? (w=>!has.has(w+'@'+barOf(q.b))) : null);
     }
     if(st && st._ly.length){
       const r=S.rows[m.sr]; let rb0=0; for(let j=0;j<m.b0;j++) rb0+=r.bb[j];
@@ -2287,7 +2290,8 @@ stage.onclick=e=>{
 };
 /* ===== 选段循环 =====
    暂停时（只认鼠标/笔，触屏照旧「点谱面 = 播放/暂停」）：
-     按下某小节 = 选中它；按住拖到别的小节 = 一直选到那里；Shift+点 = 从已选的头接着选到这里
+     单击 = 播放（用户 2026-10-30：暂停时点一下要开始播，不能变成选小节）；
+     按住不动约 0.4 秒 = 选中这一小节；按下拖动 = 从这一小节一直选到那里；Shift+点 = 从已选的头接着选到这里
      右键 / Esc = 取消；选中后按播放就只循环这几小节
    整页模式下同一行可能被演奏好几遍（反复），点的是哪一遍：
      按下时一律取第 1 遍；拖动时取锚点之后最近的那一遍（往回拖就取之前最近的） */
@@ -2343,18 +2347,25 @@ stage.addEventListener('pointerdown',e=>{
   if(e.pointerType==='touch' || e.button!==0 || playing || cid || !PL.length) return;
   const hits=barHits(e); if(!hits.length) return;
   e.preventDefault();                        /* 别拖出一片文字选区（矢量谱里的字是真文字） */
-  selEat=true;
-  if(e.shiftKey && SEL){                     /* Shift+点：从已选的头接着选到这里 */
+  if(e.shiftKey && SEL){
+    selEat=true;                     /* Shift+点：从已选的头接着选到这里 */
     const h=hits.reduce((p,q)=>Math.abs(q.a-SEL.a)<Math.abs(p.a-SEL.a)?q:p);
     selSet(Math.min(SEL.a,h.a), Math.max(SEL.b,h.b)); selNew=true; return;
   }
   /* 同一小节第 1 遍、第 2 遍都弹（整页模式反复行只印一次）：点的时候分不出是哪一遍，一律取第 1 遍（用户 2026-10-30 定）。
      hits 按演奏顺序排，[0] 就是第一次经过；往后拖时取锚点之后最近的那一遍，选段仍然连着 */
-  const h=hits[0];
-  selAnc=h; stage.classList.add('selecting');
-  try{ stage.setPointerCapture(e.pointerId); }catch(_){}
-  selSet(h.a,h.b);
+  /* 先不选：松手前没拖、也没按够时间 = 普通单击，交给 stage.onclick 播放 */
+  mp={h:hits[0], x:e.clientX, y:e.clientY, id:e.pointerId};
+  mp.tm=setTimeout(()=>{ if(mp) selBegin(); }, LP_MS);
 });
+let mp=null;                                 /* 鼠标按下、还没判定是单击还是选段 */
+function selBegin(){
+  const h=mp.h; clearTimeout(mp.tm);
+  try{ stage.setPointerCapture(mp.id); }catch(_){}
+  mp=null; selEat=true;
+  selAnc=h; stage.classList.add('selecting');
+  selSet(h.a,h.b);
+}
 function hitsAt(x,y){                       /* 坐标下的小节（拖动时 target 被捕获了，按坐标重新找） */
   const t=document.elementFromPoint(x,y);
   return (t && t.closest && t.closest('.prow')) ? barHits({target:t,clientX:x}) : [];
@@ -2367,7 +2378,9 @@ function selExtend(hits){                    /* 从锚点一直选到 hits 那�
   selSet(Math.min(selAnc.a,h.a), Math.max(selAnc.b,h.b));
 }
 stage.addEventListener('pointermove',e=>{
-  if(!selAnc || e.pointerType==='touch') return;
+  if(e.pointerType==='touch') return;
+  if(mp && Math.hypot(e.clientX-mp.x, e.clientY-mp.y)>LP_MOVE) selBegin();   /* 拖起来了 = 选段 */
+  if(!selAnc) return;
   selExtend(hitsAt(e.clientX,e.clientY));
 });
 /* ---- iPad / 手机：长按小节 = 选中，不松手接着拖 = 一直选到那里 ----
@@ -2409,10 +2422,11 @@ stage.addEventListener('touchmove',e=>{
 },{passive:false}));
 $('selX').onclick=e=>{ e.stopPropagation(); selClear(); };
 ['pointerup','pointercancel'].forEach(ev=>stage.addEventListener(ev,e=>{
+  if(mp){ clearTimeout(mp.tm); mp=null; }    /* 没拖没按够 = 单击，click 照常走播放 */
   if(!selAnc) return;
   selAnc=null; stage.classList.remove('selecting');
   try{ stage.releasePointerCapture(e.pointerId); }catch(_){}
-  if(SEL){ selNew=true; say('已选 '+SEL.n+' 小节 · 按 ▶ 循环 · 右键取消'); }   /* 不 seek：游标和页面都别动 */
+  if(SEL){ selNew=true; say('已选 '+SEL.n+' 小节 · 单击谱面或 ▶ 循环 · 右键取消'); }   /* 不 seek：游标和页面都别动 */
 }));
 stage.addEventListener('contextmenu',e=>{
   if(!(e.target.closest && e.target.closest('.prow')) && !SEL) return;
