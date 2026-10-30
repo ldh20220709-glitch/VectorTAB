@@ -2271,22 +2271,25 @@ const SC_LAB={bg:'背景色',title:'歌名颜色',text:'其他文字颜色',jian
               chordname:'和弦名颜色',chorddiagram:'和弦图颜色',house:'房子线颜色'};
 /* 四季皮肤 = 设置里 4 套默认参数（用户原话）：每套给齐全部设置项——谱面 9 色、小球色、卡拉 OK 色、竖线色，
    以及开关（跟谱指示、水花、× 回弹、火球、卡拉 OK）、火焰长度、竖线粗细。点一下全套换上，之后各项照样能单独再调 */
+/* 底色调淡过一次（用户：太深了看着不舒服）：春夏秋往白里掺四成，冬天的夜色提亮一成多，行高亮 20%→15%。
+   本机存着旧底色的（选过某一季、没再手调）认出来换成新的 */
+const SKIN_OLDBG={spring:'#d4efbf',summer:'#c6ecf3',autumn:'#f5dcae',winter:'#17263b'};
 const SKINS={
   /* 春：用户嫌「绿得不够明显」——底色换成看得出的嫩绿，文字/谱线都走绿，行高亮也是绿；桃粉只留给和弦名、小球、唱到的字 */
-  spring:{name:'春', bg:'#d4efbf',title:'#13501f',text:'#2f6b35',jianpu:'#0f3d18',lyric:'#145c24',tab:'#123a1a',
+  spring:{name:'春', bg:'#e5f5d9',title:'#13501f',text:'#2f6b35',jianpu:'#0f3d18',lyric:'#145c24',tab:'#123a1a',
           chordname:'#c81a5c',chorddiagram:'#1f5a2a',house:'#2e8b2e', ballColor:'#ff5c97',karaColor:'#c8155a',lineColor:'#2e9e3a',
-          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'220',kara:'1',lineWidth:'3',ballFx:'fire',fall:'petal', rowTint:20},
-  summer:{name:'夏', bg:'#c6ecf3',title:'#043a52',text:'#1f5d74',jianpu:'#032f42',lyric:'#044a63',tab:'#06303f',
+          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'220',kara:'1',lineWidth:'3',ballFx:'fire',fall:'petal', rowTint:15},
+  summer:{name:'夏', bg:'#ddf4f8',title:'#043a52',text:'#1f5d74',jianpu:'#032f42',lyric:'#044a63',tab:'#06303f',
           chordname:'#cc4600',chorddiagram:'#0d4a5c',house:'#008f9e', ballColor:'#ffab00',karaColor:'#c73d00',lineColor:'#0097a7',
-          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'320',kara:'1',lineWidth:'3',ballFx:'fire',fall:'rain', rowTint:20},
-  autumn:{name:'秋', bg:'#f5dcae',title:'#4a1e04',text:'#6e3f15',jianpu:'#331503',lyric:'#5a2306',tab:'#331503',
+          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'320',kara:'1',lineWidth:'3',ballFx:'fire',fall:'rain', rowTint:15},
+  autumn:{name:'秋', bg:'#f9eace',title:'#4a1e04',text:'#6e3f15',jianpu:'#331503',lyric:'#5a2306',tab:'#331503',
           chordname:'#c42a08',chorddiagram:'#4f2c10',house:'#9a5a00', ballColor:'#ff6a13',karaColor:'#b8250a',lineColor:'#c8460f',
-          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'240',kara:'1',lineWidth:'3',ballFx:'fire',fall:'leaf', rowTint:20},
+          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'240',kara:'1',lineWidth:'3',ballFx:'fire',fall:'leaf', rowTint:15},
   /* 冬：用户嫌原来的淡蓝白「不像冬天、和夏天太接近」→ 改成雪夜：深蓝夜色底、谱面冰白、和弦名冰蓝，
      白雪和冰球在深底上才显得冷；四季轮换时秋→冬就像天一点点黑下来 */
-  winter:{name:'冬', bg:'#17263b',title:'#f2f7ff',text:'#9fb3cc',jianpu:'#e9f1fb',lyric:'#dbe7f5',tab:'#c9d8ea',
+  winter:{name:'冬', bg:'#334053',title:'#f2f7ff',text:'#9fb3cc',jianpu:'#e9f1fb',lyric:'#dbe7f5',tab:'#c9d8ea',
           chordname:'#7cc8ff',chorddiagram:'#a9bcd4',house:'#8fb3dc', ballColor:'#bfe8ff',karaColor:'#7fd0ff',lineColor:'#8fd0ff',
-          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'160',kara:'1',lineWidth:'3',ballFx:'ice',fall:'snow', rowTint:20}};
+          cursor:'ball',ballSplash:'1',ballXHit:'1',ballTrail:'1',ballTrailLen:'160',kara:'1',lineWidth:'3',ballFx:'ice',fall:'snow', rowTint:15}};
 const SC=(()=>{
   const gear=$('scGear'), panel=$('scPanel'), rows=$('scRows'), inp={};
   const get=k=>{ try{ return localStorage.getItem('score_'+k); }catch(e){ return null; } };
@@ -2518,7 +2521,9 @@ const SC=(()=>{
     $('paper').classList.toggle('vecp',on);
     if(on){ const lk=fromHash();
       if(lk){ delete lk.name; for(const k in SC_DEF) put(k,lk[k]); for(const k in BDEF) bput(k,lk[k]); }
-      const s0=lk||saved(); fill(s0); apply(s0); return; }
+      const s0=lk||saved();
+      for(const id in SKIN_OLDBG) if((s0.bg||'').toLowerCase()===SKIN_OLDBG[id] && (s0.lineColor||'').toLowerCase()===SKINS[id].lineColor){ s0.bg=SKINS[id].bg; put('bg',s0.bg); }
+      fill(s0); apply(s0); return; }
     panel.hidden=true;
     for(const k in SC_DEF) $('paper').style.removeProperty('--sc-'+k);
     $('paper').style.removeProperty('--ball'); $('paper').style.removeProperty('--kara'); FALL.set('none');
