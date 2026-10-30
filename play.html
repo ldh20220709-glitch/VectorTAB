@@ -561,6 +561,7 @@ function render(d, tab) {
       let acc = 0.0; const pos = [];
       let off = bt[bi] === 'rep-start' ? 22 : 10;
       if (T(b.notes) && T(get(b.notes[0], 'grace'))) off = Math.max(off, 26);
+      if (T(b.notes) && T(get(b.notes[0], 'acc'))) off = Math.max(off, 22);
       const rp = (bi + 1 < bt.length && (bt[bi + 1] === 'rep-end' || bt[bi + 1] === 'final')) ? 20 : 6;
       const span = Math.max(10.0, bw - off - rp);
       for (const n of b.notes) {
