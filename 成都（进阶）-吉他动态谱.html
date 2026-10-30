@@ -1617,7 +1617,8 @@ function at(u){ u=Math.max(0,Math.min(TOT,u));
 function paint(){
   if(!PL.length) return;
   const a=at(pos), m=PL[a.i], r=prows[m.row];
-  if(a.i!==cur){ const lb=LAB[a.i]; if(lb && lb!==LAB[cur]) say(lb); cur=a.i; }
+  /* 段落提示（前奏 / 第 2 遍…）：选段循环时不报——每绕回段首一次就会报一次段首的段名，全是噪音 */
+  if(a.i!==cur){ const lb=LAB[a.i]; if(lb && lb!==LAB[cur] && !SEL) say(lb); cur=a.i; }
   where.textContent=(LAB[a.i]||'')+' · 第'+(a.i+1)+'/'+PL.length+'段'+(SEL?' · 循环 '+SEL.n+' 小节':'');
   if(selDirty) selPaint();
   rem.textContent=mmss((TOT-pos)/(bpm*GRP)*60);
@@ -2040,7 +2041,7 @@ function frame(t){
   if(!drag) pos+=bpm*GRP/60*dt;
   /* 选段循环：走到选段尾就绕回段首（多走的那一点带过去，不丢拍）。
      不调 anchor()：节拍器的格子 sched() 已经同样绕过去了，重新对齐反而会抖一下 */
-  if(SEL && !drag && pos>=SEL.b && pos<SEL.b+2){ pos=SEL.a+(pos-SEL.b); cur=-1; }
+  if(SEL && !drag && pos>=SEL.b && pos<SEL.b+2){ pos=SEL.a+(pos-SEL.b); }
   if(pos>=TOT){ pos=TOT; paint(); follow(dt); P.stop(); say('谱终'); return; }
   paint(); follow(dt);
   raf=requestAnimationFrame(frame);
