@@ -1780,9 +1780,28 @@ function vecPage(id){
   }
   return VEC[id]=svg;
 }
+/* 每个元素在整页上的外框，只量一次（谱面元素都是 <svg> 的直接子元素、不带 transform）。
+   谱条只放落在自己 viewBox 里的元素：原来每条都是整页拷贝，9 行谱 = 9 份整页 ≈ 2.9 万个元素，
+   四季换季时每帧改配色变量，全部重算样式重画，iPad 卡到每帧几百毫秒，最后内存撑爆页面崩溃（实测）。
+   外框留余量：线条的笔画宽度不算在 getBBox 里；文字换了网页字体会变宽，横向多留两个字号 */
+const VBOX={};
+function vecBox(id,src){
+  if(VBOX[id]) return VBOX[id];
+  const t=document.importNode(src,true);
+  t.style.cssText='position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none';
+  document.body.appendChild(t);
+  const out=[...t.children].map(e=>{
+    if(typeof e.getBBox!=='function' || e.hasAttribute('transform')) return null;
+    try{ const b=e.getBBox(), m=e.tagName==='text' ? (+e.getAttribute('font-size')||16)*2 : 0, p=6;
+         return [b.x-p-m, b.y-p, b.x+b.width+p+m, b.y+b.height+p]; }catch(_){ return null; } });
+  t.remove(); return VBOX[id]=out;
+}
 function vecView(pg,x,y,w,h){
   const src=vecPage(pg.a); if(!src) return null;
-  const v=document.importNode(src,true);
+  const v=document.importNode(src,false), bx=vecBox(pg.a,src), ks=src.children;
+  for(let i=0;i<ks.length;i++){ const b=bx[i];
+    if(!b || (b[2]>=x && b[0]<=x+w && b[3]>=y && b[1]<=y+h)) v.appendChild(document.importNode(ks[i],true)); }
+  v._src=src;
   v.setAttribute('viewBox',x+' '+y+' '+w+' '+h);
   v.setAttribute('preserveAspectRatio','none');
   v.removeAttribute('width'); v.removeAttribute('height');
@@ -2109,7 +2128,9 @@ const FALL=(()=>{
     if(LENS.size>=3) return null;
     const st=$('paper').querySelector('.strip>svg.vec'); if(!st) return null;
     let sv=lpool.pop();
-    if(!sv){ sv=st.cloneNode(true); sv.removeAttribute('class'); sv.setAttribute('preserveAspectRatio','none');
+    /* 镜子要能照到整页任何位置，用整页原件（谱条里只剩本行的元素） */
+    if(!sv){ sv=st._src ? document.importNode(st._src,true) : st.cloneNode(true); sv.removeAttribute('class'); sv.setAttribute('preserveAspectRatio','none');
+      sv.removeAttribute('width'); sv.removeAttribute('height');
       sv.querySelectorAll('.ko').forEach(e=>e.classList.remove('ko')); }
     const w=el('span','lens'); w.appendChild(sv); d.insertBefore(w, d.firstChild);
     const L={d, w, sv}; LENS.add(L); if(!lraf) lraf=requestAnimationFrame(lensTick); return L;
@@ -2404,7 +2425,9 @@ const SC=(()=>{
     if(!AUTO) return;
     const sv=Math.max(0,Math.min(3.999,p*4)); let i=Math.floor(sv), j=i, t=0;
     for(let b=1;b<=3;b++) if(Math.abs(sv-b)<0.2){ i=b-1; j=b; t=(sv-b+0.2)/0.4; t=t*t*(3-2*t); }
-    const key=i+':'+j+':'+t.toFixed(3); if(key===sKey) return; sKey=key;
+    /* 渐变分 100 档：每档颜色只差一两个色阶，看不出跳；72 拍一次换季约 16 秒，这样只重画 100 次，而不是每帧都重画 */
+    t=Math.round(t*100)/100;
+    const key=i+':'+j+':'+t.toFixed(2); if(key===sKey) return; sKey=key;
     const A=SKINS[SEQ[i]], B=SKINS[SEQ[j]], P=$('paper'), W=$('wrapP');
     /* 秋→冬是浅底深字 → 深底浅字：底色和字色一起线性走，中途会在灰色里会师，谱面一片糊（实测）。
        所以明暗反转时，底色照常慢慢变暗，字色等到中点前后 ±5% 才很快翻过去 */
