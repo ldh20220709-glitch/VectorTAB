@@ -128,8 +128,8 @@ function barline(out, x, y0, y1, kind, sp, first, dotr, cls_base) {
 }
 
 function _onset_min(tn, jn) {
-  let m = 20.0;
-  if (jn !== null && jn !== undefined) { if (T(jn.ly0) || T(jn.ly1)) m = 25.0; }
+  let m = 16.0;     // 只有六线谱音头时 16 就够（原 20），把位置让给 24 号歌词
+  if (jn !== null && jn !== undefined) { if (T(jn.ly0) || T(jn.ly1)) m = 28.0; }   // 24 号字之间留 4px
   if (tn !== null && tn !== undefined) {
     const fr = tn.hit.filter(h => h.s >= 0 && isdigit(h.f)).map(h => h.f);
     if (fr.some(f => String(f).length > 1)) m = Math.max(m, 24.0);
@@ -429,7 +429,7 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
   tab_slurs(out, row, npos, y);
 }
 
-const CHU = 9.0;     // 和弦图弦距（2026-10-30 iPad 上太小：7.7 → 9.0）
+const CHU = 10.0;    // 和弦图弦距（2026-10-30 iPad 上太小：7.7 → 9.0 → 10.0）
 function chord_box(out, x, y, grip, name, u) {
   if (u === undefined) u = CHU;
   const gw = u * 5, gh = gw * 0.79;
@@ -459,7 +459,7 @@ function house_bracket(out, x0, x1, y, num) {
 }
 
 /* ================= draw.py ================= */
-const W = 1180, PAD = 34, ROW0 = 256, LYRH = 33, HOUSE = 22, DIGY = 220, LYR1 = 267, LYR2 = 300;
+const W = 1180, PAD = 34, ROW0 = 256, LYRH = 33, HOUSE = 22, DIGY = 220, LYR1 = 270, LYR2 = 304, LYFS = 24;   // 歌词 24 号（原 21 号 267/300）
 const CHB = 65;                                  // 和弦图下沿距行顶：按下沿定位，放大只往上长
 const TABY = 89, SUBY = 86, CHY = CHB - CHU * 5 * 0.79, FS = 22;
 const DW = FS * 0.58, DCX = FS * 0.278, DTOP = FS * 0.72;
@@ -576,7 +576,7 @@ function render(d, tab) {
           const ch = get(n, 'ly' + k);
           if (T(ch)) {
             const yy = y + (k === 0 ? LYR1 : LYR2);
-            out.push(`<text x="${f1(nx + DCX)}" y="${yy}" font-size="21" text-anchor="middle" font-family="PingFang SC, sans-serif" class="cf-lyric" data-b="${gfmt((rb + pos[ni][1]) * bu)}" data-v="${k}">${esc(ch)}</text>`);
+            out.push(`<text x="${f1(nx + DCX)}" y="${yy}" font-size="${LYFS}" text-anchor="middle" font-family="PingFang SC, sans-serif" class="cf-lyric" data-b="${gfmt((rb + pos[ni][1]) * bu)}" data-v="${k}">${esc(ch)}</text>`);
           }
         }
         const g = get(n, 'grace');
