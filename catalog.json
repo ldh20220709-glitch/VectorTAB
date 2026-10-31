@@ -1,1153 +1,1467 @@
 [
  {
   "id": "sg-9fd196a16a00",
-  "title": "同桌的你（矢量版）",
+  "title": "同桌的你",
   "old": "同桌的你（矢量版）-吉他动态谱.html",
   "kind": "vector",
-  "v": "034c5cf7"
+  "v": "d2715331",
+  "cat": "song"
  },
  {
   "id": "sg-86e51ea26747",
-  "title": "后来（矢量版）",
+  "title": "后来",
   "old": "后来（矢量版）-吉他动态谱.html",
   "kind": "vector",
-  "v": "89e142fc"
+  "v": "ac22a8d8",
+  "cat": "song"
  },
  {
   "id": "sg-40462b4ccfd5",
-  "title": "后来（指弹谱）",
+  "title": "后来",
   "old": "后来（指弹谱）-吉他动态谱.html",
   "kind": "vector",
-  "v": "4ac52b6c"
+  "v": "79d81f6c",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-1d1f82e40580",
-  "title": "成都（矢量版）",
+  "title": "成都",
   "old": "成都（矢量版）-吉他动态谱.html",
   "kind": "vector",
-  "v": "1e7cee46"
+  "v": "18d9e1e3",
+  "cat": "song"
  },
  {
   "id": "sg-ad2ae8c3d8a2",
-  "title": "弯弯的月亮（矢量版）",
+  "title": "弯弯的月亮",
   "old": "弯弯的月亮（矢量版）-吉他动态谱.html",
   "kind": "vector",
-  "v": "a0d49472"
+  "v": "0b3e5640",
+  "cat": "song"
  },
  {
   "id": "sg-1cfe67ed6d75",
   "title": "成都",
   "old": "成都-吉他动态谱.html",
   "kind": "image",
-  "v": "28179048"
+  "v": "e08b54d9",
+  "cat": "image"
  },
  {
   "id": "sg-87f08416007c",
   "title": "弯弯的月亮",
   "old": "弯弯的月亮-吉他动态谱.html",
   "kind": "image",
-  "v": "768ef4a5"
+  "v": "d19f0d49",
+  "cat": "image"
  },
  {
   "id": "sg-94f349b31237",
   "title": "声声慢",
   "old": "声声慢-吉他动态谱.html",
   "kind": "image",
-  "v": "b1d3b9ab"
+  "v": "d0494a40",
+  "cat": "image"
  },
  {
   "id": "sg-944c74d45f4a",
   "title": "你是人间四月天",
   "old": "你是人间四月天-吉他动态谱.html",
   "kind": "image",
-  "v": "198034a2"
+  "v": "a0bcbfd9",
+  "cat": "image"
  },
  {
   "id": "sg-fe23f7c63bd7",
   "title": "一次就好",
   "old": "一次就好-吉他动态谱.html",
   "kind": "image",
-  "v": "89156cd4"
+  "v": "46ad41b0",
+  "cat": "image"
  },
  {
   "id": "sg-d365f9dd26c1",
   "title": "栀子花开",
   "old": "栀子花开-吉他动态谱.html",
   "kind": "image",
-  "v": "2ce9f259"
+  "v": "2a6e8e08",
+  "cat": "image"
  },
  {
   "id": "sg-36690f0e82c8",
   "title": "情非得已",
   "old": "情非得已-吉他动态谱.html",
   "kind": "image",
-  "v": "6a444256"
+  "v": "80763765",
+  "cat": "image"
  },
  {
   "id": "sg-aa49f6f5d093",
   "title": "隐形的翅膀",
   "old": "隐形的翅膀-吉他动态谱.html",
   "kind": "image",
-  "v": "f76ef26d"
+  "v": "a5d595ab",
+  "cat": "image"
  },
  {
   "id": "sg-d729d5a0aadf",
   "title": "来生缘",
   "old": "来生缘-吉他动态谱.html",
   "kind": "image",
-  "v": "ebb785ff"
+  "v": "9cb52b54",
+  "cat": "image"
  },
  {
   "id": "sg-7bcfac491d95",
   "title": "星空",
   "old": "星空-吉他动态谱.html",
   "kind": "image",
-  "v": "734f70be"
+  "v": "74d7fc05",
+  "cat": "image"
  },
  {
   "id": "sg-edf73602db69",
   "title": "同桌的你",
   "old": "同桌的你-吉他动态谱.html",
   "kind": "image",
-  "v": "899578d5"
+  "v": "1c605ec1",
+  "cat": "image"
  },
  {
   "id": "sg-b04211cf2da6",
   "title": "春天里",
   "old": "春天里-吉他动态谱.html",
   "kind": "image",
-  "v": "8439decd"
+  "v": "bb839307",
+  "cat": "image"
  },
  {
   "id": "sg-19f14860b48f",
   "title": "余香",
   "old": "余香-吉他动态谱.html",
   "kind": "image",
-  "v": "eaf467b2"
+  "v": "2161b89e",
+  "cat": "image"
  },
  {
   "id": "sg-d490b5fd608e",
   "title": "朋友",
   "old": "朋友-吉他动态谱.html",
   "kind": "image",
-  "v": "5bf7bf37"
+  "v": "0ac8d4a0",
+  "cat": "image"
  },
  {
   "id": "sg-e47cd1e407d0",
   "title": "往后余生",
   "old": "往后余生-吉他动态谱.html",
   "kind": "image",
-  "v": "358b2f9c"
+  "v": "c3c1ab6e",
+  "cat": "image"
  },
  {
   "id": "sg-e4e698287c50",
   "title": "有没有人告诉你",
   "old": "有没有人告诉你-吉他动态谱.html",
   "kind": "image",
-  "v": "f2791b53"
+  "v": "67ebf326",
+  "cat": "image"
  },
  {
   "id": "sg-839cf8772fef",
   "title": "传奇",
   "old": "传奇-吉他动态谱.html",
   "kind": "image",
-  "v": "fcfc113c"
+  "v": "649a622e",
+  "cat": "image"
  },
  {
   "id": "sg-26e6b6e14f05",
   "title": "滴答",
   "old": "滴答-吉他动态谱.html",
   "kind": "image",
-  "v": "57b24196"
+  "v": "98b00f47",
+  "cat": "image"
  },
  {
   "id": "sg-f74b6f7c557d",
-  "title": "滴答（矢量版）",
+  "title": "滴答",
   "old": "滴答（矢量版）-吉他动态谱.html",
   "kind": "vector",
-  "v": "f9921064"
+  "v": "19aae797",
+  "cat": "song"
  },
  {
   "id": "sg-79f43157ab14",
   "title": "星语心愿",
   "old": "星语心愿-吉他动态谱.html",
   "kind": "image",
-  "v": "aa5fdd76"
+  "v": "57d25ab6",
+  "cat": "image"
  },
  {
   "id": "sg-f24620cd3f66",
   "title": "灰姑娘",
   "old": "灰姑娘-吉他动态谱.html",
   "kind": "image",
-  "v": "c80384b7"
+  "v": "6a96c1c5",
+  "cat": "image"
  },
  {
   "id": "sg-4858d49e58b2",
   "title": "后来",
   "old": "后来-吉他动态谱.html",
   "kind": "image",
-  "v": "c39418d0"
+  "v": "64dcbf65",
+  "cat": "image"
  },
  {
   "id": "sg-1f98066a3c39",
   "title": "温柔",
   "old": "温柔-吉他动态谱.html",
   "kind": "image",
-  "v": "656edcf6"
+  "v": "b6747637",
+  "cat": "image"
  },
  {
   "id": "sg-d94485d7d47d",
   "title": "那些花儿",
   "old": "那些花儿-吉他动态谱.html",
   "kind": "image",
-  "v": "d73ef8a3"
+  "v": "ec6725cf",
+  "cat": "image"
  },
  {
   "id": "sg-92c1b6c8fd3f",
   "title": "旅行",
   "old": "旅行-吉他动态谱.html",
   "kind": "image",
-  "v": "64dceae9"
+  "v": "09d9956a",
+  "cat": "image"
  },
  {
   "id": "sg-1a0ce6d6cf3e",
   "title": "月亮代表我的心",
   "old": "月亮代表我的心-吉他动态谱.html",
   "kind": "image",
-  "v": "0eb00e07"
+  "v": "4b6f859f",
+  "cat": "image"
  },
  {
   "id": "sg-405ad9124220",
   "title": "我们的时光",
   "old": "我们的时光-吉他动态谱.html",
   "kind": "image",
-  "v": "bf728796"
+  "v": "938e2ffd",
+  "cat": "image"
  },
  {
   "id": "sg-c469fa4e9e10",
   "title": "你的眼神",
   "old": "你的眼神-吉他动态谱.html",
   "kind": "image",
-  "v": "866726ec"
+  "v": "31815f61",
+  "cat": "image"
  },
  {
   "id": "sg-948066a68a79",
   "title": "可可托海的牧羊人",
   "old": "可可托海的牧羊人-吉他动态谱.html",
   "kind": "image",
-  "v": "76677dc8"
+  "v": "d336149f",
+  "cat": "image"
  },
  {
   "id": "sg-4c83cc194f6f",
   "title": "多年以后",
   "old": "多年以后-吉他动态谱.html",
   "kind": "image",
-  "v": "c7d763c9"
+  "v": "d614e100",
+  "cat": "image"
  },
  {
   "id": "sg-e75f2d3e5779",
-  "title": "一次就好（矢量版）",
+  "title": "一次就好",
   "kind": "vector",
-  "v": "741ec59f"
+  "v": "4396263e",
+  "cat": "song"
  },
  {
   "id": "sg-76fec1b6c450",
-  "title": "传奇（矢量版）",
+  "title": "传奇",
   "kind": "vector",
-  "v": "9f411156"
+  "v": "c4da480a",
+  "cat": "song"
  },
  {
   "id": "sg-1f036e121bed",
-  "title": "余香（矢量版）",
+  "title": "余香",
   "kind": "vector",
-  "v": "6aeb3f92"
+  "v": "c716bea6",
+  "cat": "song"
  },
  {
   "id": "sg-ed6885de5cff",
-  "title": "你是人间四月天（矢量版）",
+  "title": "你是人间四月天",
   "kind": "vector",
-  "v": "e465e1d5"
+  "v": "3b57256f",
+  "cat": "song"
  },
  {
   "id": "sg-525e63820445",
-  "title": "你的眼神（矢量版）",
+  "title": "你的眼神",
   "kind": "vector",
-  "v": "ef990483"
+  "v": "82ee11d6",
+  "cat": "song"
  },
  {
   "id": "sg-727cdd303f5d",
-  "title": "可可托海的牧羊人（矢量版）",
+  "title": "可可托海的牧羊人",
   "kind": "vector",
-  "v": "505a7ff9"
+  "v": "32fdc3a6",
+  "cat": "song"
  },
  {
   "id": "sg-50fe12a6181a",
-  "title": "声声慢（矢量版）",
+  "title": "声声慢",
   "kind": "vector",
-  "v": "65e62439"
+  "v": "b5fbbb82",
+  "cat": "song"
  },
  {
   "id": "sg-d3470db9f667",
-  "title": "多年以后（矢量版）",
+  "title": "多年以后",
   "kind": "vector",
-  "v": "fa0a1b0a"
+  "v": "1c607839",
+  "cat": "song"
  },
  {
   "id": "sg-300af04274ed",
-  "title": "往后余生（矢量版）",
+  "title": "往后余生",
   "kind": "vector",
-  "v": "686638a3"
+  "v": "a8e586c4",
+  "cat": "song"
  },
  {
   "id": "sg-3443407a9d84",
-  "title": "情非得已（矢量版）",
+  "title": "情非得已",
   "kind": "vector",
-  "v": "21863732"
+  "v": "166cf8ea",
+  "cat": "song"
  },
  {
   "id": "sg-07bbe3b4590c",
-  "title": "我们的时光（矢量版）",
+  "title": "我们的时光",
   "kind": "vector",
-  "v": "58fa6fa7"
+  "v": "04078830",
+  "cat": "song"
  },
  {
   "id": "sg-700a79821451",
-  "title": "旅行（矢量版）",
+  "title": "旅行",
   "kind": "vector",
-  "v": "5a4fb2b9"
+  "v": "ff55f81f",
+  "cat": "song"
  },
  {
   "id": "sg-bfaace8f4669",
-  "title": "星空（矢量版）",
+  "title": "星空",
   "kind": "vector",
-  "v": "be0b788d"
+  "v": "aaac1a64",
+  "cat": "song"
  },
  {
   "id": "sg-746cc1b7b416",
-  "title": "星语心愿（矢量版）",
+  "title": "星语心愿",
   "kind": "vector",
-  "v": "7fc99a79"
+  "v": "cad98aff",
+  "cat": "song"
  },
  {
   "id": "sg-0fff720d461a",
-  "title": "春天里（矢量版）",
+  "title": "春天里",
   "kind": "vector",
-  "v": "7145b38f"
+  "v": "113ad083",
+  "cat": "song"
  },
  {
   "id": "sg-a0ec62e6ef91",
-  "title": "月亮代表我的心（矢量版）",
+  "title": "月亮代表我的心",
   "kind": "vector",
-  "v": "823ff18e"
+  "v": "3f2ba147",
+  "cat": "song"
  },
  {
   "id": "sg-dc650dfdb3b4",
-  "title": "有没有人告诉你（矢量版）",
+  "title": "有没有人告诉你",
   "kind": "vector",
-  "v": "7ac3275d"
+  "v": "f9b510cd",
+  "cat": "song"
  },
  {
   "id": "sg-b4e8a7d41d73",
-  "title": "朋友（矢量版）",
+  "title": "朋友",
   "kind": "vector",
-  "v": "14bbb5a6"
+  "v": "6c312c48",
+  "cat": "song"
  },
  {
   "id": "sg-097520903510",
-  "title": "来生缘（矢量版）",
+  "title": "来生缘",
   "kind": "vector",
-  "v": "f0197522"
+  "v": "0094f5c7",
+  "cat": "song"
  },
  {
   "id": "sg-040df53080db",
-  "title": "栀子花开（矢量版）",
+  "title": "栀子花开",
   "kind": "vector",
-  "v": "2dbfc238"
+  "v": "a2d77b0a",
+  "cat": "song"
  },
  {
   "id": "sg-d18cf68a976d",
-  "title": "温柔（矢量版）",
+  "title": "温柔",
   "kind": "vector",
-  "v": "354e956a"
+  "v": "2f4f266f",
+  "cat": "song"
  },
  {
   "id": "sg-1d24908706e6",
-  "title": "灰姑娘（矢量版）",
+  "title": "灰姑娘",
   "kind": "vector",
-  "v": "e06085b5"
+  "v": "9f89856e",
+  "cat": "song"
  },
  {
   "id": "sg-51a2caf29858",
-  "title": "那些花儿（矢量版）",
+  "title": "那些花儿",
   "kind": "vector",
-  "v": "69e65197"
+  "v": "a95744b4",
+  "cat": "song"
  },
  {
   "id": "sg-a22a378e1d41",
-  "title": "隐形的翅膀（矢量版）",
+  "title": "隐形的翅膀",
   "kind": "vector",
-  "v": "6ef2c36f"
+  "v": "c135434a",
+  "cat": "song"
  },
  {
   "id": "sg-03dd4384d5ee",
-  "title": "莫斯科郊外的晚上（指弹谱）",
+  "title": "莫斯科郊外的晚上",
   "kind": "vector",
-  "v": "48f7db47"
+  "v": "b34eae9b",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-07465ffca76c",
-  "title": "平凡之路（指弹谱）",
+  "title": "平凡之路",
   "kind": "vector",
-  "v": "5305222b"
+  "v": "44e8be02",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-077356035ac3",
-  "title": "The Sprinter（指弹谱）",
+  "title": "The Sprinter",
   "kind": "vector",
-  "v": "e8397c9f"
+  "v": "3acb8e84",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-08e5a9ac005d",
-  "title": "星月神话（指弹谱）",
+  "title": "星月神话",
   "kind": "vector",
-  "v": "82a966eb"
+  "v": "bd74ce25",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-17d67d0e25b2",
-  "title": "天空之城 C调（指弹谱）",
+  "title": "天空之城 C调",
   "kind": "vector",
-  "v": "dd98b03a"
+  "v": "f19defb6",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-1f2bf42c1def",
-  "title": "漫步人生路（指弹谱）",
+  "title": "漫步人生路",
   "kind": "vector",
-  "v": "b8999128"
+  "v": "46aa46a8",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-212e22362817",
-  "title": "雨中华尔兹（指弹谱）",
+  "title": "雨中华尔兹",
   "kind": "vector",
-  "v": "886b9202"
+  "v": "ee6780db",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-230ec361702e",
-  "title": "海阔天空（指弹谱）",
+  "title": "海阔天空",
   "kind": "vector",
-  "v": "997e6117"
+  "v": "f44d9f5e",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-27f502695a68",
-  "title": "白桦林（指弹谱）",
+  "title": "白桦林",
   "kind": "vector",
-  "v": "3e9116f8"
+  "v": "ab57fcb8",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-2d3a8f574331",
-  "title": "River flows in you（指弹谱）",
+  "title": "River flows in you",
   "kind": "vector",
-  "v": "2a2a5ace"
+  "v": "76b3961f",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-2fa57e5f5fab",
-  "title": "无题（指弹谱）",
+  "title": "无题",
   "kind": "vector",
-  "v": "1601d983"
+  "v": "ca568768",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-329bd336737f",
-  "title": "漂（指弹谱）",
+  "title": "漂",
   "kind": "vector",
-  "v": "ef9c7c5a"
+  "v": "578ef1df",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-35e55bccacfc",
-  "title": "布鲁斯练习曲（指弹谱）",
+  "title": "布鲁斯练习曲",
   "kind": "vector",
-  "v": "508e6e68"
+  "v": "b48ae4cf",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-368e3944be2f",
-  "title": "过火（指弹谱）",
+  "title": "过火",
   "kind": "vector",
-  "v": "2a04cec1"
+  "v": "c4917acb",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-383eecc86c92",
-  "title": "可可托海的牧羊人（指弹谱）",
+  "title": "可可托海的牧羊人",
   "kind": "vector",
-  "v": "54947290"
+  "v": "c296ea0e",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-3a6e8a57ac20",
-  "title": "安河桥（指弹谱）",
+  "title": "安河桥",
   "kind": "vector",
-  "v": "655898cf"
+  "v": "42f836ba",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-3df45863533b",
-  "title": "枫桥夜泊（指弹谱）",
+  "title": "枫桥夜泊",
   "kind": "vector",
-  "v": "8fd2d2af"
+  "v": "c3739376",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-3e3d1898b8bb",
-  "title": "渡情（指弹谱）",
+  "title": "渡情",
   "kind": "vector",
-  "v": "dc6eb6a3"
+  "v": "2414f2ef",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-3ed637d14bce",
-  "title": "Twilight（黄昏）（指弹谱）",
+  "title": "Twilight（黄昏）",
   "kind": "vector",
-  "v": "11d79f9b"
+  "v": "859a0d44",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-40fc538bfd17",
-  "title": "错位时空（指弹谱）",
+  "title": "错位时空",
   "kind": "vector",
-  "v": "014dabf8"
+  "v": "1313762d",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-4416e8b0c15a",
-  "title": "出山（指弹谱）",
+  "title": "出山",
   "kind": "vector",
-  "v": "4cab7654"
+  "v": "d07523dd",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-46439d397f19",
-  "title": "义勇军进行曲（指弹谱）",
+  "title": "义勇军进行曲",
   "kind": "vector",
-  "v": "8d65a849"
+  "v": "1d500627",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-46a8e800f4be",
-  "title": "追梦人（指弹谱）",
+  "title": "追梦人",
   "kind": "vector",
-  "v": "ac022043"
+  "v": "a210de50",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-46ac4d33194e",
-  "title": "不该用情（指弹谱）",
+  "title": "不该用情",
   "kind": "vector",
-  "v": "5e2abc58"
+  "v": "c1e2c323",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-474a79cc0d87",
-  "title": "云宫迅音（指弹谱）",
+  "title": "云宫迅音",
   "kind": "vector",
-  "v": "77767115"
+  "v": "c74d88bb",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-481efae6503a",
-  "title": "传奇 C调（指弹谱）",
+  "title": "传奇 C调",
   "kind": "vector",
-  "v": "ab7c6ee1"
+  "v": "5de3655f",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-4d9b25e5b20e",
-  "title": "隐形的翅膀（指弹谱）",
+  "title": "隐形的翅膀",
   "kind": "vector",
-  "v": "d7762ca4"
+  "v": "f433372a",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-4f481bf7b673",
-  "title": "你知道我在等你吗（指弹谱）",
+  "title": "你知道我在等你吗",
   "kind": "vector",
-  "v": "51b81d3a"
+  "v": "78172861",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-4f98b198fe87",
-  "title": "同桌的你（指弹谱）",
+  "title": "同桌的你",
   "kind": "vector",
-  "v": "f654886e"
+  "v": "7ffc3e96",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-51a2cf654184",
-  "title": "寂静之声（指弹谱）",
+  "title": "寂静之声",
   "kind": "vector",
-  "v": "d0f4cbe0"
+  "v": "58983d4e",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-540aa337d568",
-  "title": "Sunflower（太阳花）（指弹谱）",
+  "title": "Sunflower（太阳花）",
   "kind": "vector",
-  "v": "aaa9cacc"
+  "v": "3fd6d350",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-545f5af26c7b",
-  "title": "你离开了南京（指弹谱）",
+  "title": "你离开了南京",
   "kind": "vector",
-  "v": "41062a1e"
+  "v": "2ac6e6e4",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-5500b2f2da31",
-  "title": "铁血丹心（指弹谱）",
+  "title": "铁血丹心",
   "kind": "vector",
-  "v": "5b9faee1"
+  "v": "4f864ab1",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-5782d7f29bc5",
-  "title": "容易受伤的女人（指弹谱）",
+  "title": "容易受伤的女人",
   "kind": "vector",
-  "v": "55690940"
+  "v": "c4dae355",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-6c50fd4a0161",
-  "title": "Aloha heja he（指弹谱）",
+  "title": "Aloha heja he",
   "kind": "vector",
-  "v": "e8704ed5"
+  "v": "17b0b7e1",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-6e6a848c06d5",
-  "title": "琵琶语（指弹谱）",
+  "title": "琵琶语",
   "kind": "vector",
-  "v": "2a552648"
+  "v": "77a84ef7",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-719d1ca2f36a",
-  "title": "听闻远方有你（指弹谱）",
+  "title": "听闻远方有你",
   "kind": "vector",
-  "v": "e4d0529e"
+  "v": "b039cf2f",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-71fd7faecb9c",
-  "title": "滴答（指弹谱）",
+  "title": "滴答",
   "kind": "vector",
-  "v": "a38e5a7f"
+  "v": "465a0277",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-751dc8dd6cd6",
-  "title": "D大调卡农（指弹谱）",
+  "title": "D大调卡农",
   "kind": "vector",
-  "v": "c3c9ffdb"
+  "v": "f1884544",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-75f5ecda0019",
-  "title": "雨蝶（指弹谱）",
+  "title": "雨蝶",
   "kind": "vector",
-  "v": "076b365c"
+  "v": "cafa67e9",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-7b8ee989d17e",
-  "title": "蒲公英的约定（指弹谱）",
+  "title": "蒲公英的约定",
   "kind": "vector",
-  "v": "5adf7ff6"
+  "v": "62832aa6",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-7c50341ac321",
-  "title": "Game of Thrones（指弹谱）",
+  "title": "Game of Thrones",
   "kind": "vector",
-  "v": "4027481a"
+  "v": "7971afc7",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-7d41d54ef762",
-  "title": "美丽的神话 C调（指弹谱）",
+  "title": "美丽的神话 C调",
   "kind": "vector",
-  "v": "7827ea50"
+  "v": "a4d16600",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-7e37e8b9f9ad",
-  "title": "往后余生（指弹谱）",
+  "title": "往后余生",
   "kind": "vector",
-  "v": "3a141b90"
+  "v": "0f2dc0f5",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-7fc504d13bd0",
-  "title": "梁祝（片段）（指弹谱）",
+  "title": "梁祝（片段）",
   "kind": "vector",
-  "v": "8f1df139"
+  "v": "c7f94bfb",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-806a2c00ee44",
-  "title": "流行的云 特殊调弦（指弹谱）",
+  "title": "流行的云 特殊调弦",
   "kind": "vector",
-  "v": "5ed8b1ba"
+  "v": "4de50bfb",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-82a2c36536f2",
-  "title": "星语心愿（指弹谱）",
+  "title": "星语心愿",
   "kind": "vector",
-  "v": "92137289"
+  "v": "8b487b45",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-867449805373",
-  "title": "素敌（指弹谱）",
+  "title": "素敌",
   "kind": "vector",
-  "v": "86c1becd"
+  "v": "2c81bc0a",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-88083e7480c9",
-  "title": "天空之城 G调（指弹谱）",
+  "title": "天空之城 G调",
   "kind": "vector",
-  "v": "f29d86f5"
+  "v": "6312416b",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-89836a5ce588",
-  "title": "情非得已（指弹谱）",
+  "title": "情非得已",
   "kind": "vector",
-  "v": "61cb7570"
+  "v": "fe95b701",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-89eb5387e682",
-  "title": "蒙古人（指弹谱）",
+  "title": "蒙古人",
   "kind": "vector",
-  "v": "569d8cc0"
+  "v": "01db3213",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-8d42292edcdb",
-  "title": "丁香花（指弹谱）",
+  "title": "丁香花",
   "kind": "vector",
-  "v": "682e9623"
+  "v": "cb3a8a52",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-8e72cbd15b6f",
-  "title": "菊花台（指弹谱）",
+  "title": "菊花台",
   "kind": "vector",
-  "v": "efac15f8"
+  "v": "d2455f3d",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-8f0bb2b4a0ea",
-  "title": "美丽的神话 G调（指弹谱）",
+  "title": "美丽的神话 G调",
   "kind": "vector",
-  "v": "2f174517"
+  "v": "f83109a9",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-8fec62ce1ac3",
-  "title": "秋日的私语（指弹谱）",
+  "title": "秋日的私语",
   "kind": "vector",
-  "v": "d111e22f"
+  "v": "90932715",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-90692b2b7bf7",
-  "title": "忆（指弹谱）",
+  "title": "忆",
   "kind": "vector",
-  "v": "542d658f"
+  "v": "550b8d1c",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-9535112f5205",
-  "title": "加州旅馆（指弹谱）",
+  "title": "加州旅馆",
   "kind": "vector",
-  "v": "b85ba519"
+  "v": "e6d192a6",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-9631fad51de1",
-  "title": "千千阙歌（指弹谱）",
+  "title": "千千阙歌",
   "kind": "vector",
-  "v": "bb6b06ce"
+  "v": "590c9d4a",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-9784089f4d9d",
-  "title": "神秘园之歌（指弹谱）",
+  "title": "神秘园之歌",
   "kind": "vector",
-  "v": "e9698bf4"
+  "v": "e50957ca",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-9c575c413284",
-  "title": "虫儿飞（指弹谱）",
+  "title": "虫儿飞",
   "kind": "vector",
-  "v": "38f3488c"
+  "v": "d833e57c",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-9c672ce4f021",
-  "title": "Wonderful Tonight（指弹谱）",
+  "title": "Wonderful Tonight",
   "kind": "vector",
-  "v": "4deab3f7"
+  "v": "6a6fb83a",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-9d8c053197ba",
-  "title": "一直很安静（指弹谱）",
+  "title": "一直很安静",
   "kind": "vector",
-  "v": "4fcf2d0e"
+  "v": "96f82fd3",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-9eb34cfe9178",
-  "title": "江南（指弹谱）",
+  "title": "江南",
   "kind": "vector",
-  "v": "62e845a2"
+  "v": "72fe763e",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-9f7d27f641d8",
-  "title": "当你老了（指弹谱）",
+  "title": "当你老了",
   "kind": "vector",
-  "v": "53c34538"
+  "v": "afe57640",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-a05a2d5675ed",
-  "title": "Wind Song（指弹谱）",
+  "title": "Wind Song",
   "kind": "vector",
-  "v": "ad4f6984"
+  "v": "749594d4",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-a15a0b252a37",
-  "title": "悲伤的西班牙（指弹谱）",
+  "title": "悲伤的西班牙",
   "kind": "vector",
-  "v": "d23aa659"
+  "v": "e0175165",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-a3bb62cf5ee0",
-  "title": "Love theme from TIGA（指弹谱）",
+  "title": "Love theme from TIGA",
   "kind": "vector",
-  "v": "3b65e01e"
+  "v": "cc98be09",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-a56a646fcae6",
-  "title": "女儿情（指弹谱）",
+  "title": "女儿情",
   "kind": "vector",
-  "v": "61c16268"
+  "v": "5d662cdc",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-a5f8af1b148a",
-  "title": "致爱丽丝（指弹谱）",
+  "title": "致爱丽丝",
   "kind": "vector",
-  "v": "ed838e7d"
+  "v": "c19f29f9",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-a74d8d75cf88",
-  "title": "Five Hundred Miles（指弹谱）",
+  "title": "Five Hundred Miles",
   "kind": "vector",
-  "v": "b77af7c0"
+  "v": "5beaac84",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-a78e225fb337",
-  "title": "罗密欧与朱丽叶（指弹谱）",
+  "title": "罗密欧与朱丽叶",
   "kind": "vector",
-  "v": "8b308e08"
+  "v": "4e0acec1",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-a7aa2238d853",
-  "title": "流行的云 标准调弦（指弹谱）",
+  "title": "流行的云 标准调弦",
   "kind": "vector",
-  "v": "1db6b1db"
+  "v": "3474d952",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-a83a115714d0",
-  "title": "水边的阿狄丽娜（指弹谱）",
+  "title": "水边的阿狄丽娜",
   "kind": "vector",
-  "v": "5f63ba89"
+  "v": "72b6d174",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-aa87b760a742",
-  "title": "夜空中最亮的星（指弹谱）",
+  "title": "夜空中最亮的星",
   "kind": "vector",
-  "v": "56e05657"
+  "v": "193ffa10",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-ac297168a590",
-  "title": "Summer（指弹谱）",
+  "title": "Summer",
   "kind": "vector",
-  "v": "79098fe6"
+  "v": "a1b4c920",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-ace2ea987c0c",
-  "title": "画心（指弹谱）",
+  "title": "画心",
   "kind": "vector",
-  "v": "eb8bbdb5"
+  "v": "5edeb88c",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-adeb2d4e2393",
-  "title": "一剪梅（指弹谱）",
+  "title": "一剪梅",
   "kind": "vector",
-  "v": "2f4011b2"
+  "v": "a548144a",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-b07a53f43382",
-  "title": "漠河舞厅（指弹谱）",
+  "title": "漠河舞厅",
   "kind": "vector",
-  "v": "5a8e13c3"
+  "v": "e1a18d5b",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-b1654b47873e",
-  "title": "萱草花（指弹谱）",
+  "title": "萱草花",
   "kind": "vector",
-  "v": "dede61e7"
+  "v": "fe7b7c48",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-b1cb03a19722",
-  "title": "无心快语（指弹谱）",
+  "title": "无心快语",
   "kind": "vector",
-  "v": "bea7d70f"
+  "v": "b30e3f48",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-b3f8dfdfbb17",
-  "title": "忧伤还是快乐（指弹谱）",
+  "title": "忧伤还是快乐",
   "kind": "vector",
-  "v": "25cb501c"
+  "v": "1118ac0b",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-b7a9b2f6b16d",
-  "title": "传奇 G调（指弹谱）",
+  "title": "传奇 G调",
   "kind": "vector",
-  "v": "80d2ea1e"
+  "v": "759e52c6",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-b85ca882dd30",
-  "title": "送别（指弹谱）",
+  "title": "送别",
   "kind": "vector",
-  "v": "4e52aa99"
+  "v": "a2f0b9f5",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-bb44ef2388d2",
-  "title": "Lambada（兰巴达）（指弹谱）",
+  "title": "Lambada（兰巴达）",
   "kind": "vector",
-  "v": "b8ba32bf"
+  "v": "978edf48",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-bd46958c1460",
-  "title": "初夏（原创）（指弹谱）",
+  "title": "初夏（原创）",
   "kind": "vector",
-  "v": "ea84131a"
+  "v": "4635df36",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-befc619253d1",
-  "title": "彩虹（指弹谱）",
+  "title": "彩虹",
   "kind": "vector",
-  "v": "ac4ea567"
+  "v": "6f91dbc5",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-c1c9dd4fdb8f",
-  "title": "梦中的婚礼（指弹谱）",
+  "title": "梦中的婚礼",
   "kind": "vector",
-  "v": "ba6e1223"
+  "v": "6c7b96b3",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-c340ded3612e",
-  "title": "月半小夜曲（指弹谱）",
+  "title": "月半小夜曲",
   "kind": "vector",
-  "v": "ca5ae2dd"
+  "v": "e1bab004",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-c401f87d7dc6",
-  "title": "匆匆那年（指弹谱）",
+  "title": "匆匆那年",
   "kind": "vector",
-  "v": "d9c93d39"
+  "v": "307d4556",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-c4ab4680625c",
-  "title": "光辉岁月（指弹谱）",
+  "title": "光辉岁月",
   "kind": "vector",
-  "v": "e8030114"
+  "v": "7428b995",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-c823268b2f70",
-  "title": "贝加尔湖畔（指弹谱）",
+  "title": "贝加尔湖畔",
   "kind": "vector",
-  "v": "ac83aaea"
+  "v": "5754931b",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-c87ccc4e4fbe",
-  "title": "星星点灯（指弹谱）",
+  "title": "星星点灯",
   "kind": "vector",
-  "v": "015a974c"
+  "v": "fcf72e56",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-c9a06fd873e9",
-  "title": "Astronomia（黑人抬棺BGM）（指弹谱）",
+  "title": "Astronomia（黑人抬棺BGM）",
   "kind": "vector",
-  "v": "13eafe64"
+  "v": "54687fce",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-ce550a95741b",
-  "title": "这世界那么多人（指弹谱）",
+  "title": "这世界那么多人",
   "kind": "vector",
-  "v": "300c82d7"
+  "v": "cfc2f919",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-cfbf4db62784",
-  "title": "我和我的祖国（指弹谱）",
+  "title": "我和我的祖国",
   "kind": "vector",
-  "v": "5870a415"
+  "v": "2bdff429",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-cfd1f04e4964",
-  "title": "Hey Jude（指弹谱）",
+  "title": "Hey Jude",
   "kind": "vector",
-  "v": "41059538"
+  "v": "8c355639",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-cff559f602f1",
-  "title": "欢乐斗地主（指弹谱）",
+  "title": "欢乐斗地主",
   "kind": "vector",
-  "v": "e735e8c1"
+  "v": "9ce2dcae",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-d1955e4a9d5e",
-  "title": "世界这么大还是遇见你（指弹谱）",
+  "title": "世界这么大还是遇见你",
   "kind": "vector",
-  "v": "8e01ff70"
+  "v": "21643fb1",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-d378c2a3ee0c",
-  "title": "Always with me（指弹谱）",
+  "title": "Always with me",
   "kind": "vector",
-  "v": "5197582a"
+  "v": "f74229f7",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-d5052658690d",
-  "title": "青城山下白素贞（指弹谱）",
+  "title": "青城山下白素贞",
   "kind": "vector",
-  "v": "c1e10bcf"
+  "v": "45f748e4",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-d58bd8f65e45",
-  "title": "夜的钢琴曲5（指弹谱）",
+  "title": "夜的钢琴曲5",
   "kind": "vector",
-  "v": "7eb3f967"
+  "v": "2b25e01a",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-d58c19eef0d5",
-  "title": "爱的罗曼史（片段）（指弹谱）",
+  "title": "爱的罗曼史（片段）",
   "kind": "vector",
-  "v": "34fe1041"
+  "v": "f050a717",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-d6588961470b",
-  "title": "三寸天堂（指弹谱）",
+  "title": "三寸天堂",
   "kind": "vector",
-  "v": "09d0d6f6"
+  "v": "89c69cce",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-d76f69ba3a87",
-  "title": "You and me（指弹谱）",
+  "title": "You and me",
   "kind": "vector",
-  "v": "b21e7d1a"
+  "v": "9194ee81",
+  "cat": "solo",
+  "star": 5
  },
  {
   "id": "sg-d897c02e2b42",
-  "title": "Lemon（指弹谱）",
+  "title": "Lemon",
   "kind": "vector",
-  "v": "c3314b87"
+  "v": "fb410d0e",
+  "cat": "solo",
+  "star": 4
  },
  {
   "id": "sg-d8cd09798b74",
-  "title": "朋友（指弹谱）",
+  "title": "朋友",
   "kind": "vector",
-  "v": "f30b584b"
+  "v": "8494fa2c",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-db2c62d272a7",
-  "title": "牧羊曲（指弹谱）",
+  "title": "牧羊曲",
   "kind": "vector",
-  "v": "5705bfd3"
+  "v": "7634bf90",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-e0611e57c993",
-  "title": "恰似你的温柔 C调（指弹谱）",
+  "title": "恰似你的温柔 C调",
   "kind": "vector",
-  "v": "17e12323"
+  "v": "1d8d4de1",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-e5b1b8879ba3",
-  "title": "我真的受伤了（指弹谱）",
+  "title": "我真的受伤了",
   "kind": "vector",
-  "v": "0df626bb"
+  "v": "b78d52aa",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-e5f81fca7eff",
-  "title": "旅行的意义（指弹谱）",
+  "title": "旅行的意义",
   "kind": "vector",
-  "v": "552bc044"
+  "v": "09820835",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-e62a1c7075c2",
-  "title": "恰似你的温柔 G调（指弹谱）",
+  "title": "恰似你的温柔 G调",
   "kind": "vector",
-  "v": "80fe3ca5"
+  "v": "45535c4b",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-eb0b3a3517e5",
-  "title": "Apologize（指弹谱）",
+  "title": "Apologize",
   "kind": "vector",
-  "v": "85f724cc"
+  "v": "f58c45b4",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-edfe903fd309",
-  "title": "童年（指弹谱）",
+  "title": "童年",
   "kind": "vector",
-  "v": "96c2cccb"
+  "v": "2c6cb918",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-eea3c4d5ac3b",
-  "title": "枫叶城（指弹谱）",
+  "title": "枫叶城",
   "kind": "vector",
-  "v": "ac04722b"
+  "v": "2272d6a4",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-efe589d1a6c1",
-  "title": "别知己（指弹谱）",
+  "title": "别知己",
   "kind": "vector",
-  "v": "7285f7b4"
+  "v": "ef23312a",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-f41795d535d8",
-  "title": "一百万个可能（指弹谱）",
+  "title": "一百万个可能",
   "kind": "vector",
-  "v": "37e6fb42"
+  "v": "5ee6844e",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-f4fca5a1802a",
-  "title": "绿袖子（指弹谱）",
+  "title": "绿袖子",
   "kind": "vector",
-  "v": "b35255ad"
+  "v": "883267c4",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-f696de4b08a5",
-  "title": "只要平凡（指弹谱）",
+  "title": "只要平凡",
   "kind": "vector",
-  "v": "722e2cad"
+  "v": "af57990b",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-f7cc075078d1",
-  "title": "梦驼铃（指弹谱）",
+  "title": "梦驼铃",
   "kind": "vector",
-  "v": "af1e50f9"
+  "v": "4f7c3be7",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-f8fe7954e2f2",
-  "title": "成都（指弹谱）",
+  "title": "成都",
   "kind": "vector",
-  "v": "a614d9ba"
+  "v": "4e449205",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-f8ff3102ab8a",
-  "title": "风之丘（片段）（指弹谱）",
+  "title": "风之丘（片段）",
   "kind": "vector",
-  "v": "d6265ed2"
+  "v": "1fa515e3",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-f94c58ed197a",
-  "title": "1967（gontiti）（指弹谱）",
+  "title": "1967（gontiti）",
   "kind": "vector",
-  "v": "6a80e999"
+  "v": "a1d5e3e3",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-fa51945212d1",
-  "title": "我心永恒（指弹谱）",
+  "title": "我心永恒",
   "kind": "vector",
-  "v": "bcb42105"
+  "v": "b009c3ff",
+  "cat": "solo",
+  "star": 2
  },
  {
   "id": "sg-fb653befed4b",
-  "title": "痴情冢（指弹谱）",
+  "title": "痴情冢",
   "kind": "vector",
-  "v": "9b7625ba"
+  "v": "e2de8231",
+  "cat": "solo",
+  "star": 1
  },
  {
   "id": "sg-fc5d104b6918",
-  "title": "Fight（指弹谱）",
+  "title": "Fight",
   "kind": "vector",
-  "v": "365ffa63"
+  "v": "3dd494db",
+  "cat": "solo",
+  "star": 5
  },
  {
   "id": "sg-fe1cafdb4a62",
-  "title": "星之所在（指弹谱）",
+  "title": "星之所在",
   "kind": "vector",
-  "v": "c6601e65"
+  "v": "b9c667a3",
+  "cat": "solo",
+  "star": 3
  },
  {
   "id": "sg-feb717a8c158",
-  "title": "千年等一回（指弹谱）",
+  "title": "千年等一回",
   "kind": "vector",
-  "v": "6d94d0fb"
+  "v": "c6f88a31",
+  "cat": "solo",
+  "star": 3
  }
 ]

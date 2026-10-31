@@ -1126,7 +1126,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API;
     }
     /* 标题格式用户 2026-10-30 定（同 make_song.page_title）：吉他弹唱《成都》动态吉他谱·矢量版（VectorTAB制作） */
     var t=doc.title||'', vec=doc.kind==='vector';
-    if(t) document.title='吉他'+(t.indexOf('指弹')>=0?'指弹':'弹唱')+'《'+t.replace(/（(矢量版|数字谱|指弹谱)）/g,'')+'》动态吉他谱'+(vec?'·矢量版':'')+'（VectorTAB制作）';
+    if(t) document.title='吉他'+((doc.cat==='solo'||t.indexOf('指弹')>=0)?'指弹':'弹唱')+'《'+t.replace(/（(矢量版|数字谱|指弹谱)）/g,'')+'》动态吉他谱'+(vec?'·矢量版':'')+'（VectorTAB制作）';   /* 歌名不再带后缀（2026-10-31），指弹/弹唱看栏目 cat */
   }catch(e){ window.__LOADERR=String(e&&e.message||e); }
   window.__BOOT=id;                       /* 取不到时播放器会提示「数据没能载入」，不留空白 */
 })();
