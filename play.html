@@ -3324,7 +3324,7 @@ function sndBuild(){
            指弹行（用户 2026-10-31）：着重号的音弹满（旋律），没标的按拍位再整体压到 0.8 倍（伴奏），旋律才浮得出来；
            弹唱行：按拍位，重音记号加一档 */
         const w=weight(acc-(n.dur||0),beats,sigNow);
-        const vel=(tonly&&hasAcc) ? (n.acc?1.0:w*0.8) : Math.min(1.0, w+(n.acc?0.18:0));
+        const vel=(tonly&&hasAcc) ? (n.acc?1.0:w*0.62) : Math.min(1.0, w+(n.acc?0.18:0));   /* 伴奏 0.8→0.62（用户 2026-10-31：再小一些） */
         const arrow=hit.find(h=>h.f==='up'||h.f==='down'||h.f==='strum');
         const roll=hit.some(h=>h.f==='roll');
         const digs=hit.filter(h=>h.s>=0&&h.s<=5&&(isdig(h.f)||h.f==='x'||h.f==='slap'));
