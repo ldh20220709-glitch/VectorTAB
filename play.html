@@ -3012,16 +3012,21 @@ function bIdx(u){ let lo=0, hi=BALL.length-1; if(u<BALL[0].u) return 0;
   while(lo<hi){ const md=(lo+hi+1)>>1; if(BALL[md].u<=u) lo=md; else hi=md-1; } return lo; }
 /* 时刻 u 的小球：位置、半径、挤压。拖影也用它算，所以残影严格走在真轨迹上 */
 function ballPos(u){
-  const k=bIdx(u), A=BALL[k], B=BALL[k+1], pa=bpx(A);
+  const k=bIdx(u), A=BALL[k], pa=bpx(A);
+  let B=BALL[k+1];
   const R=Math.max(5, 7*pa.s);                     /* 球半径 7 谱面单位 ≈ 1.2 弦距，手机上也看得清 */
   if(u<A.u || !B) return {x:pa.x, y:pa.y, R, sx:1, sy:1, o:1, k, pa};
-  const pb=bpx(B), dt=B.u-A.u, t=Math.max(0,Math.min(1,(u-A.u)/dt));
+  /* 选段循环：段尾那一拍的下一落点是段首，不是段外的下一小节（用户 2026-11-01：球先跑到循环外的下一小节，再跳回段首）。
+     飞行时长按到段尾的距离算；落点在左边就走下面「回跳」那套弹起落下的动画 */
+  const wrapSel = SEL && B.u>=SEL.b-1e-6 && A.u<SEL.b-1e-6;
+  if(wrapSel) B=BALL[bIdx(SEL.a)];
+  const pb=bpx(B), dt=wrapSel ? SEL.b-A.u : B.u-A.u, t=Math.max(0,Math.min(1,(u-A.u)/dt));
   /* 同样的间隔同样高，像节拍器的摆；细分的半拍矮一些 */
   const H=REDUCE ? 0 : pa.s*22*Math.min(1, 0.45+0.55*dt/GRP);
   /* 换行 / 反复回跳（整页模式）：不斜穿谱面飞过去。
      前半拍在原地往前弹起、淡出；后半拍从下一落点上方落下、淡入，照样踩在拍子上。
      跑马灯的下一条就接在右边，照常连着跳。 */
-  if(!ribbon && (PL[A.i].row!==PL[B.i].row || pb.x<pa.x)){
+  if((!ribbon && (PL[A.i].row!==PL[B.i].row || pb.x<pa.x)) || (wrapSel && (PL[A.i].row!==PL[B.i].row || pb.x<pa.x+1e-6))){
     if(REDUCE) return {x:pa.x, y:pa.y, R, sx:1, sy:1, o:1, k, pa};
     /* 照常往前跳一拍的距离（和上一跳一样宽），看得到它越过最后一拍；
        过了弧顶才淡出（0.45→0.62），再从下一落点上方落下、淡入（0.62→0.8），踩在拍上 */
@@ -4252,6 +4257,7 @@ window.__GS = {
   get pos(){ return pos; },
   get playing(){ return playing; },
   get sel(){ return SEL && {a:SEL.a, b:SEL.b, n:SEL.n}; },
+  selSet(a,b){ selSet(a,b); }, ballPos(u){ return BALL.length ? ballPos(u) : null; },   /* 自检用 */
   get ball(){ return BALL; },
   ballPx: k => BALL[k] && bpx(BALL[k]),
   seek: u => seek(u),
