@@ -3415,7 +3415,7 @@ function sndBuild(){
           else if(lg && fret!=null){ e.leg=lg; e.vel*=0.6; }   /* 连线落音 */
           hs.push(e);
         }
-        if((arrow||roll) && !hs.length){              /* 空箭头 / 空琶音（波浪线旁边没写数字）：按当前和弦扫；没有和弦图就扫各弦最近按过的品位 */
+        if((arrow||roll) && !hs.length && !tied.has(bi+','+ni+',-1')){   /* 空箭头 / 空琶音（波浪线旁边没写数字）：按当前和弦扫；没有和弦图就扫各弦最近按过的品位；延音线连过来的（成都末小节第二个琶音，弦记 -1）不再扫 */
           const s0=arrow?Math.max(0,Math.round(+arrow.a||0)):0, s1=arrow?Math.min(5,Math.round(arrow.b!=null?+arrow.b:5)):5;
           for(let s=s0;s<=s1;s++){ const g=grip?grip[5-s]:lastF[s]; if(g!=null&&isdig(g)) hs.push({u, uo:0, dts:0, s, fret:+g, vel:vel*0.8}); }
         }
@@ -4212,7 +4212,8 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playin
 window.__GS = {
   get song(){ return S; },
   get drum(){ return {on:DRM, hits:dHits, pend:dPend.length}; },
-  get vox(){ return {on:VOX, info:voxInfo(), loaded:!!xBuf, dur:xBuf&&xBuf.duration, src:!!xSrc||xOn, old:xOld.length, rate:xOn?xRate:(xSrc&&xSrc.playbackRate.value), mode:(xNode&&xWkId===(S&&S.id))?'worklet':'buffer', xT, xPos, xEnd, err:xErr, gain:xBus&&xBus.gain.value}; },
+  get ev(){ return EV; },   /* 自检用：模拟演奏的事件表 */
+    get vox(){ return {on:VOX, info:voxInfo(), loaded:!!xBuf, dur:xBuf&&xBuf.duration, src:!!xSrc||xOn, old:xOld.length, rate:xOn?xRate:(xSrc&&xSrc.playbackRate.value), mode:(xNode&&xWkId===(S&&S.id))?'worklet':'buffer', xT, xPos, xEnd, err:xErr, gain:xBus&&xBus.gain.value}; },
   get vol(){ return {v:VOL, snd:sBus&&sBus.gain.value, drum:dBus&&dBus.gain.value}; },
   shareUrl: () => shareUrl(),
   get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, leg:sLeg, rates:sVoice.map(v=>v?+v.playbackRate.value.toFixed(4):null), bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
