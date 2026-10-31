@@ -1654,6 +1654,8 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
 #spdpop .sub,#simpop .sub{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted)}
 #spdpop .pv,#simpop .pv{font-family:var(--num);font-size:11px;font-weight:700;color:var(--muted)}
 #spdpop .sl,#simpop .sl{position:relative;height:156px;width:44px}
+#simpop .col.tg.off{opacity:.38;filter:saturate(.2)}   /* 这首没有的音轨：整列置灰，按钮和滑杆都 disabled（用户 2026-11-01：只剩一根杆不好看） */
+#simpop .col.tg.off .sm,#simpop .col.tg.off input[type=range]{cursor:not-allowed}
 /* BPM 滑块：自绘。原生的是个小圆点，手指/鼠标都不好抓（用户要方形）。
    整条是转了 -90° 的横向 range，所以「宽」= 竖直方向的长度。滑块 30×22（转过来是 30 宽、22 高）的圆角方块，
    中间三道横纹当握把；轨道 8px，走过的部分用主题色填（--p 由 setBpm 写） */
@@ -3785,12 +3787,16 @@ function voxSched(){                        /* 选段循环：到段尾前 1 秒
     if(xOld.length>4) xOld.shift(); }
 }
 function voxHush(){ voxKill(); }
+function simCol(id, on){                  /* 模拟演奏面板的一列（按钮 + 音量杆）：这首没有这条音轨就整列置灰禁用，位置留着 */
+  const b=$(id); if(!b) return; const col=b.closest('.col'); b.disabled=!on; b.hidden=false;
+  if(col){ col.classList.toggle('off',!on); const r=col.querySelector('input[type=range]'); if(r) r.disabled=!on; }
+}
 function setVox(on, user){                   /* user：是用户亲手按的（按钮 / 快捷键），不是开谱时恢复设置 */
   on=!!on;
   const v=voxInfo();
   if(on && user && S && !v){ say(S.score ? '这首还没做人声音轨' : '图片谱没有人声音轨'); return; }
   VOX=on; lss('vox',VOX?'1':'0');
-  $('vox').hidden=!v; $('vox').setAttribute('aria-pressed',String(VOX)); panelLights();
+  $('vox').setAttribute('aria-pressed',String(VOX)); simCol('vox', !!v); panelLights();
   if(VOX && v){
     if(user){ audio(); voxLoad().then(()=>anchor()); }
     else { xRetries=0; voxFetch().then(()=>{ if(acx && VOX) voxLoad(); }); }   /* 开谱恢复：先把字节拉回来；已有上下文（节拍器等建的）就顺手解码，没有就等按播放 */
@@ -3803,7 +3809,7 @@ function setSnd(on, user){                      /* user：是用户亲手按的�
   SND=on; lss('snd',SND?'1':'0');                 /* 开图片谱不改设置：按钮藏起来、不发声，回到矢量谱照旧 */
   FALL.quiet(SND);                                 /* 试听开着就不飘特效（用户定） */
   if(SND && user && FALL.want!=='none') setTimeout(()=>say('试听时暂停飘落特效'),0);
-  $('snd').hidden=!(S&&S.score); $('snd').setAttribute('aria-pressed',String(SND)); panelLights();
+  simCol('snd', !!(S&&S.score)); $('snd').setAttribute('aria-pressed',String(SND)); panelLights();   /* 图片谱：吉他这列也置灰留位，不藏 */
   if(SND){ audio(); anchor(); } else sndHush();
 }
 
