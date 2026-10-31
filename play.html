@@ -1151,7 +1151,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API;
       for(var vk in pack){
         var dv=pack[vk];
         if(dv && dv.score){
-          try{ var vr=window.VecRender.toSong(dv); pack[vk]=vr.song; for(var ik in vr.imgs) IMG[ik]=vr.imgs[ik]; }
+          try{ var vr=window.VecRender.toSong(dv); vr.song.score=dv.score; pack[vk]=vr.song; for(var ik in vr.imgs) IMG[ik]=vr.imgs[ik]; }   /* score 留在 song 上：试听按它发声 */
           catch(e){ delete pack[vk]; window.__LOADERR='谱面渲染出错：'+(e&&e.message||e); }
         }
       }
@@ -1780,6 +1780,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
           </div>
         </div>
         <button class="sm cjk" id="met" aria-pressed="false">节拍器</button>
+        <button class="sm cjk" id="snd" aria-pressed="false" hidden title="按谱发声：跟着游标把六线谱上的音弹出来（矢量谱才有音符数据）">试听</button>
         <button class="sm cjk" id="sub" aria-pressed="false" title="在主拍之间补一层轻响：4/4 变每拍两下，6/8 变每小节六下">细分</button>
         <button class="sm cjk" id="mode" aria-pressed="false">跑马灯</button>
         <button class="sm" id="prev">⟨</button>
@@ -2594,6 +2595,7 @@ let subdiv=false;               /* 节拍器是否连细分一起响 */
 let bpm=68, pos=0, playing=false, last=0, raf=0, written=-1, lock=null, cur=-1, sy=0,
     ribbon=false, drag=false, metro=false;
 let acx=null, aT=0, aPos=0, nb=0, pend=[], armed=false;
+let SND=false;                  /* 试听：按谱发声（引擎见下文「试听」一节） */
 /* 选段循环：SEL = {a,b} 演奏时间轴上的单位区间 [a,b)（小节边界）；selAnc = 按下时的那一小节；
    selEat = 这次按下是选小节，随后的 click 不许再当「点谱面 = 播放」 */
 let SEL=null, selAnc=null, selEat=false, selDirty=true;
@@ -2602,7 +2604,7 @@ let selNew=false;
 
 function lsg(k){ try{ return localStorage.getItem('gs.'+k); }catch(e){ return null; } }
 function lss(k,v){ try{ localStorage.setItem('gs.'+k,v); }catch(e){} }
-ribbon = lsg('ribbon')==='1'; metro = lsg('metro')==='1'; subdiv = lsg('subdiv')==='1';
+ribbon = lsg('ribbon')==='1'; metro = lsg('metro')==='1'; subdiv = lsg('subdiv')==='1'; SND = lsg('snd')==='1';
 /* 排法跟着显示模式走：
    跑马灯 = 展开反复，一条带子只往前走；
    整页   = 谱面只铺一遍（和印刷谱一致），反复时游标跳回原位，能看出整首的结构。 */
@@ -2782,7 +2784,8 @@ function buildPlay(){
   [...sb.querySelectorAll('.tk')].forEach(n=>n.remove());
   PL.forEach((m,i)=>{ if(!i) return;
     const t=el('div','tk'+(LAB[i]!==LAB[i-1]?' hd':'')); t.style.left=(CUM[i]/TOT*100)+'%'; sb.appendChild(t); });
-  bpm = S.bpm||68; setBpm(bpm); setMetro(metro); setSub(subdiv); applyMode();
+  sndBuild();
+  bpm = S.bpm||68; setBpm(bpm); setMetro(metro); setSub(subdiv); setSnd(SND); applyMode();
   fit(); seek(0); SC.sync();
 }
 
@@ -3236,7 +3239,7 @@ async function wake(on){ try{
   else if(lock){ await lock.release(); lock=null; } }catch(e){} }
 
 /* at 可指定音频时间轴上的起点，让预备拍和正式演奏接在同一条格子上 */
-function anchor(at){ if(!acx) return; aT=(at!=null?at:acx.currentTime); aPos=pos; nb=Math.ceil(pos-1e-6); }
+function anchor(at){ if(!acx) return; aT=(at!=null?at:acx.currentTime); aPos=pos; nb=Math.ceil(pos-1e-6); sndAnchor(); }
 /* lv: 2=小节头 1=主拍 0=细分 */
 function tickAt(t,lv){
   const o=acx.createOscillator(), g=acx.createGain();
@@ -3249,6 +3252,166 @@ function tickAt(t,lv){
   if(pend.length>8) pend.splice(0,pend.length-8);
 }
 function hush(){ pend.forEach(o=>{try{o.stop();}catch(e){}}); pend=[]; }
+/* ================= 试听：按谱发声 =================
+   矢量谱带语义谱（S.score），播放时把六线谱上每个音按游标时间轴弹出来，和节拍器走同一条音频时钟。
+   声音：Karplus-Strong 拨弦——每个音高（含力度档）只算一次，缓存成 AudioBuffer；每根弦一个声部，
+   再拨同一弦就把上一个音 4ms 收掉（真琴也是这样）；× 没有和弦可查、slap 用短噪声当闷音；
+   扫弦箭头按方向逐弦错开 12ms（箭头朝上 = 从低音弦扫到高音弦），琶音 28ms，倚音提前 70ms 轻弹，
+   击/勾/滑的落音轻弹，延音线（tie）的后一个音不再拨。
+   排程和节拍器一样：独立定时器、1 秒预排窗口、按音频时钟；锚点自己拷一份（sT/sPos），
+   选段绕回时各绕各的，不互相改对方的锚点。 */
+let EV=[], en=-1, sT=0, sPos=0, sVoice=[null,null,null,null,null,null], sAll=[], sBus=null, sBuf={}, sNoise=null, sPlayed=0;
+const S_MIDI=[64,59,55,50,45,40];          /* 六线谱从上到下：一弦 e4 … 六弦 E2 */
+const isdig=v=>/^\d+$/.test(String(v));
+function sndCapo(){ const m=/\d+/.exec(String((S&&S.score&&S.score.meta&&S.score.meta.capo)||'')); return m?Math.min(12,+m[0]):0; }
+/* 事件表：{u 单位时刻, uo 单位内偏移(占时值比例), dts 秒偏移, s 弦, fret 品(null=闷音), vel 力度} 或 {u, mute:true}（休止：全收） */
+function sndBuild(){
+  EV=[]; en=-1; sPlayed=0;
+  const sc=S&&S.score; if(!sc||!sc.rows||!PL.length) return;
+  let grip=null;                               /* 当前和弦指位（六弦→一弦 6 格），跨小节沿用 */
+  PL.forEach((m,i)=>{
+    const row=sc.rows[m.sr]; if(!row||!row.tab) return;
+    const tb=row.tab.bars||[], jb=(row.jp&&row.jp.bars)||[];
+    const tied=new Set(), lega=new Set();
+    (row.tab.slurs||[]).forEach(q=>{ (q.k==='tie'?tied:lega).add(q.b1+','+q.n1+','+q.s); });
+    let u0=CUM[i];
+    for(let bi=m.b0; bi<m.b1 && bi<tb.length; bi++){
+      const b=tb[bi], units=m.bars[bi-m.b0]||0, beats=b.beats||1;
+      const j=jb[bi]||{};
+      const chs=(j.chords&&j.chords.length)?j.chords:(j.grip?[{grip:j.grip,at:0}]:[]);
+      let ci=0, acc=0;
+      (b.notes||[]).forEach((n,ni)=>{
+        while(ci<chs.length && (+chs[ci].at||0)<=acc+1e-6){ if(chs[ci].grip) grip=chs[ci].grip; ci++; }
+        const u=u0+acc/beats*units, du=(n.dur||0)/beats*units, hit=n.hit||[];
+        acc+=n.dur||0;
+        if(n.rest){ EV.push({u, uo:0, dts:0, mute:true}); return; }
+        if(!hit.length) return;
+        const vel=n.acc?1.0:0.78;
+        const arrow=hit.find(h=>h.f==='up'||h.f==='down'||h.f==='strum');
+        const roll=hit.some(h=>h.f==='roll');
+        const digs=hit.filter(h=>h.s>=0&&h.s<=5&&(isdig(h.f)||h.f==='x'||h.f==='slap'));
+        let hs=[];
+        for(const h of digs){
+          const key=bi+','+ni+','+h.s;
+          if(h.paren||tied.has(key)) continue;        /* 括号音 = 延续上一个音；延音线后音不拨 */
+          let fret=null;
+          if(isdig(h.f)) fret=+h.f;
+          else if(h.f==='x'){ const g=grip&&grip[5-h.s]; if(g!=null&&isdig(g)) fret=+g; }
+          const e={u, uo:0, dts:0, s:h.s, fret, vel:vel*(lega.has(key)?0.6:1)};
+          if(h.off<0){ e.dts=-0.07; e.vel*=0.6; }      /* 前倚音：提前一点、轻 */
+          else if(h.off>0){ e.uo=du*0.5; e.vel*=0.6; } /* 同一音内右侧的击弦落音：半个时值后轻弹 */
+          hs.push(e);
+        }
+        if(arrow && !hs.length && grip){              /* 空箭头：按当前和弦扫箭头覆盖的几根弦 */
+          const s0=Math.max(0,Math.round(+arrow.a||0)), s1=Math.min(5,Math.round(arrow.b!=null?+arrow.b:5));
+          for(let s=s0;s<=s1;s++){ const g=grip[5-s]; if(g!=null&&isdig(g)) hs.push({u, uo:0, dts:0, s, fret:+g, vel:vel*0.8}); }
+        }
+        if(arrow||roll){
+          const bassFirst = !(arrow && arrow.f==='down');
+          hs.sort((a,c)=>bassFirst ? c.s-a.s : a.s-c.s);
+          const gap=roll&&!arrow ? 0.028 : 0.012;
+          hs.forEach((e,k)=>{ e.dts+=k*gap; if(hs.length>2) e.vel*=0.85; });
+        }
+        EV.push(...hs);
+      });
+      u0+=units;
+    }
+  });
+  EV.sort((a,b)=>(a.u-b.u)||(a.dts-b.dts));
+}
+function sndLB(u){ let lo=0, hi=EV.length; while(lo<hi){ const m=(lo+hi)>>1; if(EV[m].u<u) lo=m+1; else hi=m; } return lo; }
+function sndAnchor(){ sT=aT; sPos=aPos; en=-1; sndCancel(); }
+function sndSched(){
+  if(!SND||!acx||!EV.length||(!playing&&!armed)) return;
+  const now=acx.currentTime, hz=now+1.0, spu=60/(bpm*GRP);
+  if(en<0) en=sndLB(sPos-1e-6);
+  for(let guard=0; guard<4000; guard++){
+    const wrap = SEL && sPos<SEL.b && (en>=EV.length || EV[en].u>=SEL.b-1e-6);
+    if(wrap){ sT+=(SEL.b-sPos)*spu; sPos=SEL.a; en=sndLB(SEL.a-1e-6); if(sT>hz) break; continue; }
+    if(en>=EV.length) break;
+    const e=EV[en], t=sT+(e.u-sPos+(e.uo||0))*spu+(e.dts||0);
+    if(t>hz) break;
+    if(t>now-0.03) sndPlay(e, Math.max(t,now));
+    en++;
+  }
+}
+function sndBusGet(){
+  if(sBus) return sBus;
+  const comp=acx.createDynamicsCompressor();
+  comp.threshold.value=-16; comp.ratio.value=4; comp.attack.value=0.003; comp.release.value=0.12;
+  comp.connect(acx.destination);
+  sBus=acx.createGain(); sBus.gain.value=0.75; sBus.connect(comp);
+  try{                                             /* 一点琴箱余响：合成的脉冲响应，0.5 秒 */
+    const sr=acx.sampleRate, N=Math.floor(sr*0.5), ir=acx.createBuffer(2,N,sr);
+    for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0;
+      for(let i=0;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-i/(sr*0.11)); lp+=0.25*(w-lp); d[i]=lp; } }
+    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.22;
+    sBus.connect(cv); cv.connect(wg); wg.connect(comp);
+  }catch(e){}
+  return sBus;
+}
+/* Karplus-Strong：噪声激励一个周期 → 延迟线 + 两点平均（高频衰得快，低音弦余音长）；
+   拨弦位置梳状（离琴桥 13%）让音色不那么「电」；按力度分 3 档亮度 */
+function sndBuf(midi, vel){
+  const br=vel>0.9?2:(vel<0.65?0:1), key=midi+'/'+br;
+  if(sBuf[key]) return sBuf[key];
+  const sr=acx.sampleRate, f=440*Math.pow(2,(midi-69)/12), P=sr/f-0.5;
+  const Pi=Math.floor(P), fr=P-Pi, N=Math.floor(sr*3.0), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0);
+  const hl = f<120 ? 0.85 : f<250 ? 0.7 : 0.5;    /* 幅度半衰期（秒） */
+  const g=Math.pow(0.5, 1/(hl*sr)), k=[0.3,0.5,0.75][br];
+  let lp=0, mean=0; for(let i=0;i<=Pi+1;i++){ lp+=k*((Math.random()*2-1)-lp); y[i]=lp; mean+=lp; }
+  mean/=(Pi+2); for(let i=0;i<=Pi+1;i++) y[i]-=mean;
+  const pp=Math.max(1,Math.round(P*0.13)); for(let i=Pi+1;i>=pp;i--) y[i]-=0.9*y[i-pp];
+  for(let n=Pi+2;n<N;n++){ const a=y[n-Pi]*(1-fr)+y[n-Pi-1]*fr, b=y[n-Pi-1]*(1-fr)+y[n-Pi-2]*fr; y[n]=g*0.5*(a+b); }
+  let mx=1e-6; for(let i=0;i<Math.min(N,Pi*3);i++) mx=Math.max(mx,Math.abs(y[i]));
+  const sc=0.8/mx; for(let i=0;i<N;i++) y[i]*=sc;
+  const F0=Math.floor(sr*2.4);                    /* 最后 0.6 秒余弦淡出：缓冲到头不能硬切，低音弦那时还有 -18dB，会「咔」一声 */
+  for(let i=F0;i<N;i++) y[i]*=0.5*(1+Math.cos(Math.PI*(i-F0)/(N-F0)));
+  sBuf[key]=buf; return buf;
+}
+function sndNoiseBuf(){
+  if(sNoise) return sNoise;
+  const sr=acx.sampleRate, N=Math.floor(sr*0.07), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0); let lp=0;
+  for(let i=0;i<N;i++){ lp+=0.35*((Math.random()*2-1)-lp); y[i]=lp*Math.exp(-i/(sr*0.012))*0.9; }
+  sNoise=buf; return buf;
+}
+function sndStop(s,t,tau){
+  const v=sVoice[s]; if(!v) return; sVoice[s]=null;
+  try{ if(v._t0>t-0.001){ v.stop(0); return; }
+       v._g.gain.setTargetAtTime(0,t,tau); v.stop(t+tau*8); }catch(e){}
+}
+function sndPlay(e,t){
+  const bus=sndBusGet();
+  if(e.mute){ for(let s=0;s<6;s++) sndStop(s,t,0.03); return; }
+  sndStop(e.s,t,0.004);
+  const src=acx.createBufferSource(), g=acx.createGain();
+  src.buffer = e.fret==null ? sndNoiseBuf() : sndBuf(S_MIDI[e.s]+e.fret+sndCapo(), e.vel);
+  g.gain.value=Math.min(1.2, e.vel*(e.fret==null?0.5:1)*(0.86+0.028*(5-e.s)));
+  src.connect(g);
+  let out=g;
+  if(acx.createStereoPanner){ const p=acx.createStereoPanner(); p.pan.value=0.3-e.s*0.12; g.connect(p); out=p; }
+  out.connect(bus);
+  src._t0=t; src._g=g; src._s=e.s;
+  src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); if(sVoice[e.s]===src) sVoice[e.s]=null; try{ out.disconnect(); }catch(x){} };
+  src.start(t); sVoice[e.s]=src; sAll.push(src); sPlayed++;
+}
+function sndCancel(){                              /* 重新对齐：还没响的作废（会按新锚点重排），正在响的留着 */
+  if(!acx) return; const now=acx.currentTime;
+  sAll.slice().forEach(v=>{ if(v._t0>now+0.005){ try{ v.stop(0); }catch(e){} } });
+}
+function sndHush(){                                /* 停住：全部 40ms 内收掉 */
+  if(!acx) return; const now=acx.currentTime;
+  sAll.slice().forEach(v=>{ try{ if(v._t0>now){ v.stop(0); } else { v._g.gain.setTargetAtTime(0,now,0.04); v.stop(now+0.3); } }catch(e){} });
+  sVoice=[null,null,null,null,null,null];
+}
+function setSnd(on, user){                      /* user：是用户亲手按的（按钮 / 快捷键），不是开谱时恢复设置 */
+  on=!!on;
+  if(on && user && S && !EV.length){ say(S.score ? '这首的六线谱没读出可以弹的音' : '图片谱没有音符数据，试听只对矢量谱有效'); return; }
+  SND=on; lss('snd',SND?'1':'0');                 /* 开图片谱不改设置：按钮藏起来、不发声，回到矢量谱照旧 */
+  $('snd').hidden=!(S&&S.score); $('snd').setAttribute('aria-pressed',String(SND));
+  if(SND){ audio(); anchor(); } else sndHush();
+}
+
 /* 预排窗口 1 秒。原先 0.25 秒且挂在 rAF 上：页面一卡（滚动、重绘），
    rAF 停摆超过窗口，那几拍就被整段跳过——仿真里 600ms 卡顿丢 10 下、
    最大间隔偏差 882ms，听上去就是忽快忽慢。
@@ -3283,12 +3446,12 @@ function setBpm(v){ bpm=Math.max(40,Math.min(160,Math.round(v)));
   spv.value=bpm; spv.style.setProperty('--p',((bpm-spv.min)/(spv.max-spv.min)*100)+'%'); if(S){ S.bpm=bpm; save(); } anchor(); paint(); }
 
 let schedTimer=0;
-function startSched(){ clearInterval(schedTimer); schedTimer=setInterval(sched,25); }
+function startSched(){ clearInterval(schedTimer); schedTimer=setInterval(()=>{ sched(); sndSched(); },25); }
 function stopSched(){ clearInterval(schedTimer); schedTimer=0; }
 const PLAYD='M1 1.2 14 8.5 1 15.8Z', PAUSED='M1.5 1h4v15h-4ZM9.5 1h4v15h-4Z';
 function icon(){ pico.firstElementChild.setAttribute('d', playing?PAUSED:PLAYD); }
 const P={
-  go(audioAt){ last=performance.now(); playing=true; icon(); wake(true); if(metro) audio();
+  go(audioAt){ last=performance.now(); playing=true; icon(); wake(true); if(metro||SND) audio();
         /* 预备拍交棒：轮询是 40ms 一次，交棒时正式第 1 拍其实已经响过一会儿了——把这段补进游标，别从一开始就慢半拍 */
         if(audioAt!=null && acx){ const late=acx.currentTime-audioAt; if(late>0 && late<0.5) pos=Math.min(TOT, pos+late*bpm*GRP/60); }
         /* armed 表示预备拍已经把格子定好、排程器也在跑了，这里不能重新对齐——
@@ -3297,7 +3460,7 @@ const P={
         armed=false;
         raf=requestAnimationFrame(frame); idle(); },
   stop(){ if(!playing && !raf) return;
-        playing=false; armed=false; cancelAnimationFrame(raf); raf=0; stopSched(); icon(); wake(false); hush();
+        playing=false; armed=false; cancelAnimationFrame(raf); raf=0; stopSched(); icon(); wake(false); hush(); sndHush();
         clearTimeout(tid); lean(false); paint(); }
 };
 function toggle(){
@@ -3316,7 +3479,7 @@ let cid=0;
    起拍前就已经进了节奏，不用现找。 */
 function countIn(){
   if(!PL.length) return;
-  clearInterval(cid); if(metro) audio();
+  clearInterval(cid); if(metro||SND) audio();
   if(pos>=TOT) seek(0);
   const m=PL[at(pos).i];
   const units=(m.bars&&m.bars[0])||GRP*2;          /* 第一小节有几个单位 */
@@ -3324,9 +3487,9 @@ function countIn(){
   const mains=Math.max(1,Math.ceil(units/GRP));    /* 这一小节几个主拍 */
   count.hidden=false; count.firstElementChild.textContent=mains;
   let playAt=null;
-  if(metro&&acx){
+  if((metro||SND)&&acx){
     const t0=acx.currentTime+0.06;
-    for(let u=0;u<units;u++){
+    for(let u=0;u<units && metro;u++){            /* 只开试听不开节拍器：不打预备拍的响，但格子照样定（下面） */
       const main=(u%GRP)===0;
       if(main||subdiv) tickAt(t0+u*spu, u===0?2:(main?1:0));
       if(subdiv && GRP===1) tickAt(t0+u*spu+spu/2, 0);   /* 预备拍也要带上细分 */
@@ -3441,6 +3604,7 @@ $('prev').onclick=e=>{ e.stopPropagation(); prevRow(); };
 $('next').onclick=e=>{ e.stopPropagation(); rowTo(at(pos).i+1); };
 $('rst').onclick =e=>{ e.stopPropagation(); P.stop(); seek(0); };
 $('met').onclick =e=>{ e.stopPropagation(); setMetro(!metro); };
+$('snd').onclick =e=>{ e.stopPropagation(); setSnd(!SND, true); };
 function setSub(on){ subdiv=!!on; lss('subdiv',subdiv?'1':'0');
   $('sub').setAttribute('aria-pressed',String(subdiv)); if(!subdiv) hush();
   ballBuild(); if(PL.length) paint(); }   /* 小球跟着细分开关换跳法 */
@@ -3633,6 +3797,7 @@ addEventListener('keydown',e=>{
   else if(k==='ArrowUp'){ e.preventDefault(); prevRow(); }
   else if(k==='['){ setBpm(bpm-2); } else if(k===']'){ setBpm(bpm+2); }
   else if(k==='m'||k==='M'){ setMetro(!metro); }
+  else if(k==='p'||k==='P'){ setSnd(!SND, true); }
   else if(k==='s'||k==='S'){ setSub(!subdiv); }
   else if(k==='r'||k==='R'){ P.stop(); seek(0); }
   else if(k==='Escape'){ spdpop.hidden=true; selClear(); }
@@ -3647,6 +3812,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playin
    只读暴露，不提供任何修改入口，对正常使用没有影响。 */
 window.__GS = {
   get song(){ return S; },
+  get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, bufs:Object.keys(sBuf).length, buf:sBuf, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing}; },
   get play(){ return PL; },
   get total(){ return TOT; },
   get ribbon(){ return ribbon; },
