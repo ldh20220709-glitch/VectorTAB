@@ -137,6 +137,10 @@ const el=(t,c,x)=>{const n=document.createElement(t); if(c)n.className=c; if(x!=
      3. 顺序码 —— 一串能复制粘贴的文本，离线也能把顺序带到另一台设备。
    谁新用谁（比 ts），本机改动永远立刻生效，不会被云端悄悄盖掉。 */
 const OKEY='gs2.order';
+/* 短分享链接：index.html?s=9fd196（曲目 id 去掉 sg- 后的前 6 位，186 首无重复）→ 跳到播放页。目录页和播放页分离后，这是最短的落点 */
+(function(){ const m=/[?&]s=([0-9a-f]{6,})/i.exec(location.search); if(!m) return;
+  const k=m[1].toLowerCase(), hit=SONGS.find(r=>r.id.replace(/^sg-/,'').startsWith(k));
+  if(hit) location.replace('play.html?id='+hit.id+'&lib=1'+(hit.v?'&v='+hit.v:'')); })();
 let ORD=null, ORDTS=0, ordNote=false, LIST=SONGS.slice();
 
 /* ======== 栏目 ========

@@ -1635,11 +1635,13 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
 #spdpop,#simpop{width:auto;padding:10px 10px 8px}
 .pop .row{display:flex;gap:10px;align-items:flex-start}
 .pop .col{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:64px}
-.pop .col.tg{align-self:stretch;justify-content:flex-start}
-.pop .col.tg .sm{width:100%;justify-content:center}
+.pop .col.tg{align-items:stretch;justify-content:flex-start;min-width:max-content}
+.pop .col.tg .sm{width:auto;box-sizing:border-box;white-space:nowrap;text-align:center}
+.pop .col.tg .nm,.pop .col.tg .sub,.pop .col.tg .sl{align-self:center}
 .pop .sl.short{height:104px}
 .pop .nm{font-family:var(--cjk);font-size:11px;color:var(--ink);letter-spacing:0;margin-top:2px}
 #rst svg{display:block}
+#spdpop.pop,#simpop.pop{width:auto}   /* 压过上面 #spdpop 的 96px 定宽（那是单根 BPM 滑块时代的），不然左列按钮会探出面板 */
 #spdpop,#simpop{position:absolute;bottom:calc(100% + 9px);left:50%;transform:translateX(-50%);z-index:9;width:96px;
         background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);
         padding:11px 9px 9px;display:flex;flex-direction:column;align-items:center;gap:6px}
@@ -3259,9 +3261,17 @@ function follow(dt){
 let fid=0;
 /* 分享：地址栏本来就带着皮肤/字体（#skin= / #cfg= / &font=），分享的就是它。
    手机上走系统分享面板（微信、短信…），没有就复制到剪贴板；本地 file:// 打开的没网址可分享，直说 */
+/* 分享链接（用户 2026-10-31：不带配色，尽量短）：只带 6 位曲目码，落到目录页由它跳转到播放页。
+   https://…/VectorTAB/?s=9fd196 —— 去掉了 play.html、完整 id、lib、v 和皮肤/配色哈希，从 92～143 字符缩到 57。
+   本机设置（皮肤、节拍…）都挂在完整 id 上，不受影响；收到链接的人用自己的默认配色。 */
+function shareUrl(){
+  const id=(S&&S.id)||window.__BOOT||'', m=/^sg-([0-9a-f]{6})/.exec(id);
+  const base=location.origin+location.pathname.replace(/[^/]*$/,'');
+  return m ? base+'?s='+m[1] : location.origin+location.pathname+location.search;
+}
 $('shareBtn').onclick=async()=>{
   if(location.protocol==='file:'){ say('本地文件没有网址，发布到网上后才能分享'); return; }
-  const url=location.href, title=(S && S.title ? S.title+' · ' : '')+'VectorTAB';
+  const url=shareUrl(), title=(S && S.title ? S.title+' · ' : '')+'VectorTAB';
   if(navigator.share){ try{ await navigator.share({title, url}); return; }catch(e){ if(e && e.name==='AbortError') return; } }
   let ok=false;
   try{ await navigator.clipboard.writeText(url); ok=true; }catch(e){
@@ -3754,6 +3764,7 @@ function measureChrome(){
 }
 function lean(on){
   const app=$('app'); if(!app) return;
+  if(on && popsOpen()){ idle(); return; }      /* 二级面板开着就不收栏，关了面板再按 3 秒收（用户 2026-10-31：面板不能跟着栏跑） */
   if(on) measureChrome();
   if(app.classList.contains('lean')===!!on) return;
   app.classList.toggle('lean', !!on);
@@ -3847,23 +3858,30 @@ function placePop(pop){ pop.style.transform=''; if(pop.hidden) return;
   if(r.left<m) dx=m-r.left; else if(r.right>W-m) dx=W-m-r.right;
   if(dx) pop.style.transform='translateX(calc(-50% + '+dx.toFixed(0)+'px))'; }
 $('spd').onclick =e=>{ e.stopPropagation(); spdpop.hidden=!spdpop.hidden;
-  $('spd').setAttribute('aria-expanded',String(!spdpop.hidden)); placePop(spdpop); };
+  $('spd').setAttribute('aria-expanded',String(!spdpop.hidden)); if(!spdpop.hidden){ clearTimeout(tid); lean(false); } else idle(); placePop(spdpop); };
 spdpop.onclick=e=>e.stopPropagation();
 const simpop=$('simpop');
-$('sim').onclick =e=>{ e.stopPropagation(); simpop.hidden=!simpop.hidden; $('sim').setAttribute('aria-expanded',String(!simpop.hidden)); volPaint(); placePop(simpop); };
+$('sim').onclick =e=>{ e.stopPropagation(); simpop.hidden=!simpop.hidden; $('sim').setAttribute('aria-expanded',String(!simpop.hidden)); if(!simpop.hidden){ clearTimeout(tid); lean(false); } else idle(); volPaint(); placePop(simpop); };
 simpop.onclick=e=>e.stopPropagation();
 document.querySelectorAll('.pop input[data-k]').forEach(i=>{ i.oninput=()=>setVol(i.dataset.k, +i.value/100); });
-addEventListener('pointerdown',e=>{ if(!simpop.hidden && !simpop.contains(e.target) && !$('sim').contains(e.target)){
-  simpop.hidden=true; $('sim').setAttribute('aria-expanded','false'); } },true);
 volPaint();
 /* 面板外层按钮亮起 = 里面有开着的 */
 function panelLights(){ $('spd').setAttribute('aria-pressed',String(metro)); $('sim').setAttribute('aria-pressed',String(SND||DRM)); }
 spv.oninput=()=>setBpm(+spv.value);
-addEventListener('pointerdown',e=>{ if(!spdpop.hidden && !spdpop.contains(e.target) && !$('spd').contains(e.target)){
-  spdpop.hidden=true; $('spd').setAttribute('aria-expanded','false'); } },true);
+/* 二级面板（节拍器 / 模拟演奏）：点面板和按钮以外的地方就关掉，关的那一下吞掉，不当「点谱面 = 播放」（用户 2026-10-31） */
+let popEat=false;
+function popsOpen(){ return !spdpop.hidden || !simpop.hidden; }
+function closePops(){ let did=false;
+  for(const [pop,btn] of [[spdpop,'spd'],[simpop,'sim']]) if(!pop.hidden){ pop.hidden=true; $(btn).setAttribute('aria-expanded','false'); did=true; }
+  if(did) idle(); return did; }
+addEventListener('pointerdown',e=>{ popEat=false;
+  for(const [pop,btn] of [[spdpop,'spd'],[simpop,'sim']])
+    if(!pop.hidden && !pop.contains(e.target) && !$(btn).contains(e.target)){ pop.hidden=true; $(btn).setAttribute('aria-expanded','false'); popEat=true; }
+  if(popEat) idle(); },true);
 
 let ct=0;
 stage.onclick=e=>{
+  if(popEat){ popEat=false; return; }      /* 这一下是在关二级面板 */
   if(selEat){ selEat=false; return; }      /* 这一下是在选小节 */
   if(!count.hidden) return;
   const now=Date.now();
@@ -4046,7 +4064,7 @@ addEventListener('keydown',e=>{
   else if(k==='d'||k==='D'){ setDrm(!DRM); }
   else if(k==='s'||k==='S'){ setSub(!subdiv); }
   else if(k==='r'||k==='R'){ P.stop(); seek(0); }
-  else if(k==='Escape'){ spdpop.hidden=true; simpop.hidden=true; selClear(); }
+  else if(k==='Escape'){ if(!closePops()) selClear(); }
 });
 /* 原来动一下鼠标就重置计时。现在的规矩是：开始播放 3 秒后收起，
    只有「点谱面暂停」才放回来，中途晃鼠标不该把它顶出来。 */
@@ -4060,6 +4078,7 @@ window.__GS = {
   get song(){ return S; },
   get drum(){ return {on:DRM, hits:dHits, pend:dPend.length}; },
   get vol(){ return {v:VOL, snd:sBus&&sBus.gain.value, drum:dBus&&dBus.gain.value}; },
+  shareUrl: () => shareUrl(),
   get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, leg:sLeg, rates:sVoice.map(v=>v?+v.playbackRate.value.toFixed(4):null), bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
   get play(){ return PL; },
   get total(){ return TOT; },
