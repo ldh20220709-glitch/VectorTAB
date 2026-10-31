@@ -202,6 +202,7 @@ function bar_pad(b, bt, bi) {
   let off = bt[bi] === 'rep-start' ? 20 : 9;
   if (T(b.notes) && (b.notes[0].hit || []).some(h => get(h, 'off') === -1)) off = Math.max(off, 24);
   const rp = (bi + 1 < bt.length && (bt[bi + 1] === 'rep-end' || bt[bi + 1] === 'final')) ? 17 : 4;
+  if (T(b.sig)) off += SPC * 1.9;              // 中途变拍：拍号两个数字印在小节开头，音符往后让
   return [off, rp];
 }
 function note_x(b, bt, bi, x, bw, t, tab_only) {
@@ -235,9 +236,13 @@ function note_frac(notes, beats, tab_only, bar) {
 }
 function clef_width(sig, clef) { if (clef === undefined) clef = true; return clef ? SPC * (CLEFW + (T(sig) ? 1.9 : 0)) : 0; }
 
-function rest_sym(out, x, y, dur) {
+function rest_sym(out, x, y, dur, dot) {
   const s = SPC;
-  if (dur >= 1) {
+  if (dot) out.push(`<circle cx="${f1(x + 0.75 * s)}" cy="${f1(y + 1.6 * s)}" r="${f1(s * 0.14)}" class="cf-tab"/>`);
+  if (dur >= 2) {
+    const yy = y + 2 * s;
+    out.push(`<rect x="${f1(x - 0.45 * s)}" y="${f1(dur < 4 ? yy - 0.35 * s : yy)}" width="${f1(0.9 * s)}" height="${f1(0.35 * s)}" class="cf-tab"/>`);
+  } else if (dur >= 1) {
     out.push(`<path d="M${f1(x - 0.25 * s)},${f1(y + 1.3 * s)} L${f1(x + 0.35 * s)},${f1(y + 2.1 * s)} L${f1(x - 0.2 * s)},${f1(y + 2.8 * s)} `
       + `L${f1(x + 0.35 * s)},${f1(y + 3.5 * s)} Q${f1(x - 0.45 * s)},${f1(y + 3.3 * s)} ${f1(x + 0.05 * s)},${f1(y + 4.2 * s)}" `
       + `fill="none" class="cs-tab" stroke-width="2.2" stroke-linejoin="round"/>`);
@@ -277,6 +282,11 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
   bars.forEach((b, bi) => {
     const bw = (width - cw) * bar_width(b) / tot;
     const [off, rp] = bar_pad(b, bt, bi);
+    if (T(b.sig)) {
+      const p = b.sig.split('/').concat(['']); const a_ = p[0], b_ = p[1];
+      for (const [t_, cy] of [[a_, 1.29], [b_, 3.60]])
+        out.push(`<text x="${f1(x + off - SPC * 0.95)}" y="${f1(y + SPC * cy + SPC * 0.45)}" font-size="${f1(SPC * 1.81)}" text-anchor="middle" font-family="Times New Roman, serif" class="cf-tab">${t_}</text>`);
+    }
     const span = Math.max(10.0, bw - off - rp);
     let acc = 0.0; const pos = [];
     const fr = note_frac(b.notes, b.beats, get(row, 'tab_only'), b);
@@ -289,7 +299,7 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
     }
     pos.forEach(([nx], i) => {
       const n = b.notes[i];
-      if (T(get(n, 'rest'))) { rest_sym(out, nx, y, n.dur); return; }
+      if (T(get(n, 'rest'))) { rest_sym(out, nx, y, n.dur, T(get(n, 'dot'))); return; }
       const hs = n.hit.filter(h => !nonp(h.f)).map(h => h.s).sort((a, c) => a - c);
       let top = hs.length ? y + (hs[hs.length - 1] + STEMTOP) * SPC : y;
       if (!hs.length && n.hit.some(h => h.f === 'up' || h.f === 'down')) top = y + 5 * SPC + SPC * 0.3;
@@ -305,7 +315,7 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
         if (b.notes[i0].beams < k) { i0++; continue; }
         let j = i0;
         while (j + 1 < b.notes.length && b.notes[j + 1].beams >= k
-          && Math.trunc(pos[j + 1][1] / UNIT + 1e-6) === Math.trunc(pos[i0][1] / UNIT + 1e-6)
+          && Math.trunc(pos[j + 1][1] / (b._u || UNIT) + 1e-6) === Math.trunc(pos[i0][1] / (b._u || UNIT) + 1e-6)
           && T(get(b.notes[j + 1], 'tup')) === T(get(b.notes[i0], 'tup'))) j++;
         const yy = by - (k - 1) * (BEAM + 2.5);
         let x1_ = pos[i0][0], x2_ = pos[j][0];
@@ -449,6 +459,7 @@ function chord_box(out, x, y, grip, name, u) {
   const gw = u * 5;
   let gh = gw * 0.79;
   out.push(`<text x="${f1(x + gw / 2)}" y="${f1(y - u * 1.5)}" text-anchor="middle" font-size="${f1(u * 1.9)}" font-weight="700" font-family="Helvetica" class="cf-chordname">${name}</text>`);
+  if (grip === null || grip === undefined) return;      // 不认识的和弦名：只印名字（同 draw_tab.chord_box）
   // 高把位：最高品超过 3 就从最低品起画，左边标起始品位，顶线不画粗（同 draw_tab.chord_box）
   const frs = (grip || []).filter(v => /^\d+$/.test(String(v)) && parseInt(v, 10) > 0).map(v => parseInt(v, 10));
   const base = (frs.length && Math.max(...frs) > 3) ? Math.min(...frs) : 1;
@@ -531,6 +542,10 @@ function content_bottom(jr, tr, nly, tonly_row) {
 function render(d, tab) {
   const sig = d.sig || (d.meta || {}).sig || '4/4';
   UNIT = ['6/8', '9/8', '12/8'].indexOf(sig) >= 0 ? 1.5 : 1.0;
+  if (tab) {
+    let cur = sig;                             // 中途变拍：小节上的 sig 从此往后生效，分梁的拍单位跟着变
+    for (const r_ of tab.rows) for (const b_ of r_.bars) { cur = b_.sig || cur; b_._u = ['6/8', '9/8', '12/8'].indexOf(cur) >= 0 ? 1.5 : 1.0; }
+  }
   if (tab) prep_rows(tab.rows, d.rows, tab.rows.map((_, ri) => W - PAD * 2 - clef_width(ri === 0 ? d.sig : null)));
   const rows = d.rows;
   const [tops, , hof, , tonly, HH] = row_heights(d, tab);
