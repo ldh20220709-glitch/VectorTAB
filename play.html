@@ -2079,10 +2079,15 @@ $('tabPlay').onclick=()=>{ if(S) show('play'); };
    用户：「冬天满屏飘雪花，时不时有雪花飘下来；秋天时不时有黄叶飘下来；春天花瓣；夏天飘雨点」。
    「时不时」= 稀疏、不间断地来：每种一个随机间隔的生成器 + 同屏上限。只有数字谱、演奏页可见、
    页面在前台时才生成；减少动态效果时整个关掉。每片用 element.animate() 一次性飘完，结束回收。 */
+/* 手机预算（2026-10-31）：iPhone 15 Pro Max 上开着四季皮肤 + 试听，播到一半 Safari 把整页杀了（耗能过高），不开皮肤就没事。
+   实测（WebKit，后来弹唱）：试听本身只加 2～3% CPU，夏天皮肤一层飘落就要 60%——水珠放大镜每颗克隆一整页谱面 SVG 逐帧刷新、
+   雨点 36 颗带水花、雪花 46 片各带 drop-shadow 滤镜。触屏设备一律减配：不开放大镜、粒子减半、间隔拉长、雪花不用滤镜。 */
+const MOB = matchMedia('(pointer:coarse)').matches || Math.min(screen.width,screen.height)<700;
 const FALL=(()=>{
   const box=$('fall'), pool=[]; let kind='none', tm=0, alive=0;
   const R=(a,b)=>a+Math.random()*(b-a);
-  const SNOWF='<svg viewBox="-10 -10 20 20"><g stroke="#fff" stroke-width="1.8" stroke-linecap="round" style="filter:drop-shadow(0 0 1.2px rgba(45,90,145,.85))">'
+  const BUD = MOB ? 0.5 : 1;                       /* 粒子上限系数 */
+  const SNOWF='<svg viewBox="-10 -10 20 20"><g stroke="#fff" stroke-width="1.8" stroke-linecap="round"'+(MOB?'':' style="filter:drop-shadow(0 0 1.2px rgba(45,90,145,.85))"')+'>'
     +[0,60,120].map(a=>'<g transform="rotate('+a+')"><path d="M0-9V9M-2.6-6.4L0-4 2.6-6.4M-2.6 6.4L0 4 2.6 6.4"/></g>').join('')+'</g></svg>';
   const PETAL=c=>'<svg viewBox="-10 -12 20 24"><path d="M0 11C-8 5-9-3-4-9c2-2 3-1 4 1 1-2 2-3 4-1 5 6 4 14-4 20z" fill="'+c+'" stroke="rgba(190,60,100,.35)" stroke-width=".6"/>'
     +'<path d="M0 9C-1 3-1-2 0-6" stroke="rgba(255,255,255,.6)" stroke-width=".8" fill="none"/></svg>';
@@ -2093,7 +2098,8 @@ const FALL=(()=>{
             e.style.width=e.style.height=z+'px';
             e.innerHTML=flake?SNOWF:'';
             e.style.background=flake?'':'radial-gradient(circle,#fff 0,#fff 45%,rgba(255,255,255,0) 72%)';
-            e.style.borderRadius='50%'; e.style.filter=flake?'':'drop-shadow(0 0 1.5px rgba(50,95,150,.75))';   /* 白雪落在浅底上，靠一圈冷灰蓝的晕勾出来 */
+            e.style.borderRadius='50%'; e.style.filter=(flake||MOB)?'':'drop-shadow(0 0 1.5px rgba(50,95,150,.75))';   /* 白雪落在浅底上，靠一圈冷灰蓝的晕勾出来；手机用 box-shadow 代替滤镜 */
+            e.style.boxShadow=(MOB&&!flake)?'0 0 1.5px rgba(50,95,150,.75)':'';
             return {dur:R(8000,14000), sway:R(18,60), spin:R(-180,180), drift:R(-30,30), tilt:false}; }},
     petal:{gap:[700,1700], max:14, make(e){ const z=R(10,17), c=['#f8b9cf','#f49ab9','#fcd3e1','#f7a8c4'][Math.random()*4|0];
             e.style.width=z+'px'; e.style.height=z*1.2+'px'; e.innerHTML=PETAL(c); e.style.background=''; e.style.filter='';
@@ -2111,7 +2117,7 @@ const FALL=(()=>{
   /* 实测：功能栏收起后飘落层比屏幕底边还长出 32px，所以地面 = 飘落层下沿和屏幕底边里靠上的那个 */
   const ground=()=>Math.min(box.clientHeight, innerHeight-box.getBoundingClientRect().top);
   function splash(x, g){
-    if(Math.random()<0.35) return;
+    if(Math.random()<(MOB?0.65:0.35)) return;
     const n=2+(Math.random()*3|0);
     for(let i=0;i<n;i++){ const z=R(2,3.6), e=el('span','fp sp'); e.style.width=e.style.height=z+'px'; box.appendChild(e);
       const dx=R(-20,20), dy=R(9,24), du=R(340,560);
@@ -2125,7 +2131,7 @@ const FALL=(()=>{
     an.onfinish=an.oncancel=()=>r.remove();
   }
   function one(){
-    const c=CFG[kind]; if(!c || alive>=c.max) return;
+    const c=CFG[kind]; if(!c || alive>=c.max*BUD) return;
     const W=box.clientWidth, H=box.clientHeight; if(!W || !H) return;
     const e=pool.pop()||el('span','fp'); e.style.opacity='0'; box.appendChild(e); alive++;
     const o=c.make(e), x0=R(-40,W+20), y0=-30, y1=o.rain ? ground()-o.rain*0.92 : H+30;   /* 雨：下端正好落到地面 */
@@ -2168,7 +2174,7 @@ const FALL=(()=>{
      全程先读后写（先把所有 getBoundingClientRect 读完再改 viewBox），避免读写交错导致强制重排。 */
   const MAG=1.6, LENS=new Set(), lpool=[]; let lraf=0, lvars='';
   function lensOn(d, z){
-    if(LENS.size>=3) return null;
+    if(MOB || LENS.size>=3) return null;           /* 手机不开放大镜：每颗都是一整页谱面逐帧重画 */
     const st=$('paper').querySelector('.strip>svg.vec'); if(!st) return null;
     let sv=lpool.pop();
     /* 镜子要能照到整页任何位置，用整页原件（谱条里只剩本行的元素） */
@@ -2198,7 +2204,7 @@ const FALL=(()=>{
     lraf=requestAnimationFrame(lensTick);
   }
   function drop(){
-    const W=box.clientWidth, H=box.clientHeight; if(kind!=='rain' || !W || !H || gAlive>=7) return;   /* 夏天时排好的定时器，换季后不许再冒水珠 */
+    const W=box.clientWidth, H=box.clientHeight; if(kind!=='rain' || !W || !H || gAlive>=(MOB?4:7)) return;   /* 夏天时排好的定时器，换季后不许再冒水珠 */
     gAlive++;
     /* 大小要拉开档次（用户：「大小过于雷同」）：四成小水点（不滑）、四成中等、两成大颗。
        越大越重：窜得越勤、一次窜得越远 */
@@ -2284,14 +2290,16 @@ const FALL=(()=>{
   function gloop(){
     tg=0; if(kind!=='rain') return;
     if(!document.hidden && !$('playView').hidden) drop();
-    tg=setTimeout(gloop, R(900,2400));
+    tg=setTimeout(gloop, R(900,2400)/BUD);
   }
   function loop(){
     tm=0; const c=CFG[kind]; if(!c) return;
     if(!document.hidden && !$('playView').hidden) one();
-    tm=setTimeout(loop, R(c.gap[0],c.gap[1]));
+    tm=setTimeout(loop, R(c.gap[0],c.gap[1])/BUD);
   }
-  return { set(k, soft){
+  /* 用户定（2026-10-31）：开试听就关飘落特效——手机上两样一起跑会被 Safari 杀页。want 记住皮肤要的，试听关了再恢复 */
+  let want='none', quiet=false;
+  function apply(k, soft){
     k=(REDUCE || !CFG[k]) ? 'none' : k;
     if(k===kind) return; kind=k; clearTimeout(tm); tm=0; clearTimeout(tg); tg=0;
     /* soft：四季自动轮换时换季，已经在飘的让它飘完，新一季的慢慢接上，不要一刀切 */
@@ -2299,7 +2307,10 @@ const FALL=(()=>{
     box.getAnimations ? box.querySelectorAll('.fp').forEach(e=>e.getAnimations().forEach(a=>a.cancel())) : (box.innerHTML='');
     if(CFG[k]){ /* 一换上就先撒几片，别让人等 */ for(let i=0;i<(k==='rain'?6:3);i++) setTimeout(one, i*180); loop();
       if(k==='rain'){ setTimeout(drop,300); setTimeout(drop,900); setTimeout(gloop,1500); } }
-  } };
+  }
+  return { set(k, soft){ want=k; apply(quiet?'none':k, soft); },
+           quiet(q){ quiet=!!q; apply(quiet?'none':want); },
+           get want(){ return want; }, get kind(){ return kind; } };
 })();
 
 /* ================= 演奏 ================= */
@@ -3262,7 +3273,8 @@ function hush(){ pend.forEach(o=>{try{o.stop();}catch(e){}}); pend=[]; }
    选段绕回时各绕各的，不互相改对方的锚点。 */
 let sndErr='';
 let EV=[], en=-1, sT=0, sPos=0, sVoice=[null,null,null,null,null,null], sAll=[], sBus=null, sPan=[], sBuf={}, sNoise=null, sPlayed=0;
-const S_SR=24000, S_LEN=2.4, S_MAX=32;        /* 缓冲 24kHz × 2.4s（约 230KB 一个）、最多缓存 32 个：手机 WebKit 内存紧，越轻越好 */
+const S_SR=24000, S_LEN=2.4, S_MAX=24, S_LIVE=12;   /* 缓冲 24kHz × 2.4s（约 230KB 一个）、最多缓存 24 个、同时在响的音源最多 12 个：
+                                                        手机上皮肤动画已经把 CPU 顶到很高，试听必须尽量省（iOS 对耗能过高的页面会强制重载） */
 const S_MIDI=[64,59,55,50,45,40];          /* 六线谱从上到下：一弦 e4 … 六弦 E2 */
 const isdig=v=>/^\d+$/.test(String(v));
 function sndCapo(){ const m=/\d+/.exec(String((S&&S.score&&S.score.meta&&S.score.meta.capo)||'')); return m?Math.min(12,+m[0]):0; }
@@ -3339,18 +3351,14 @@ function sndSched(){
 }
 function sndBusGet(){
   if(sBus) return sBus;
-  const comp=acx.createDynamicsCompressor();
-  comp.threshold.value=-16; comp.ratio.value=4; comp.attack.value=0.003; comp.release.value=0.12;
-  comp.connect(acx.destination);
-  sBus=acx.createGain(); sBus.gain.value=0.8; sBus.connect(comp);
-  /* 每根弦一个固定的声像节点（一弦偏右、六弦偏左），每个音只建「源 + 增益」两个节点就够了。
-     原先每个音还各建一个声像节点、总线上再挂一个卷积混响——手机 WebKit 播到一半整页崩掉（内存），都去掉了 */
-  sPan=[];
-  for(let s=0;s<6;s++){
-    let n=sBus;
-    if(acx.createStereoPanner){ try{ n=acx.createStereoPanner(); n.pan.value=0.3-s*0.12; n.connect(sBus); }catch(e){ n=sBus; } }
-    sPan.push(n);
-  }
+  /* 图最省：总线一个增益 → 一个 tanh 软限幅（扫六根弦叠起来不破音）→ 输出。
+     原先每个音各建声像节点、总线挂压缩器和卷积混响——手机上皮肤动画 + 这些一起跑，iOS 播到一半把整页杀了 */
+  sBus=acx.createGain(); sBus.gain.value=0.55;
+  let out=acx.destination;
+  try{ const ws=acx.createWaveShaper(), n=1024, c=new Float32Array(n);
+       for(let i=0;i<n;i++){ const x=(i/(n-1))*2-1; c[i]=Math.tanh(1.6*x)/Math.tanh(1.6); }
+       ws.curve=c; ws.connect(acx.destination); out=ws; }catch(e){}
+  sBus.connect(out); sPan=[];
   return sBus;
 }
 /* Karplus-Strong：噪声激励一个周期 → 延迟线 + 两点平均（高频衰得快，低音弦余音长）；
@@ -3379,10 +3387,13 @@ function sndNoiseBuf(){
   for(let i=0;i<N;i++){ lp+=0.35*((Math.random()*2-1)-lp); y[i]=lp*Math.exp(-i/(sr*0.012))*0.9; }
   sNoise=buf; return buf;
 }
+/* 收掉一个还没开始响的源：不能 stop(0)——结束时间早于开始时间，iOS WebKit 可能算出负长度崩掉；
+   让它静音、在开始之后一点再停 */
+function sndKill(v){ try{ v._g.gain.cancelScheduledValues(0); v._g.gain.value=0; v.stop(v._t0+0.05); }catch(e){} }
 function sndStop(s,t,tau){
   const v=sVoice[s]; if(!v) return; sVoice[s]=null;
-  try{ if(v._t0>t-0.001){ v.stop(0); return; }
-       v._g.gain.setTargetAtTime(0,t,tau); v.stop(t+tau*8); }catch(e){}
+  try{ if(v._t0>t-0.001){ sndKill(v); return; }
+       v._g.gain.setTargetAtTime(0,t,tau); v.stop(Math.max(t,v._t0)+tau*8); }catch(e){}
 }
 function sndFree(v){ try{ v.disconnect(); }catch(x){} try{ v._g.disconnect(); }catch(x){} v.onended=null; if(sVoice[v._s]===v) sVoice[v._s]=null; }
 function sndPlay(e,t){
@@ -3392,28 +3403,37 @@ function sndPlay(e,t){
   const src=acx.createBufferSource(), g=acx.createGain();
   src.buffer = e.fret==null ? sndNoiseBuf() : sndBuf(S_MIDI[e.s]+e.fret+sndCapo(), e.vel);
   g.gain.value=Math.min(1.2, e.vel*(e.fret==null?0.5:1)*(0.86+0.028*(5-e.s)));
-  src.connect(g); g.connect(sPan[e.s]||sBus);
+  src.connect(g); g.connect(sBus);
   src._t0=t; src._g=g; src._s=e.s;
   src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
   src.start(t); sVoice[e.s]=src; sAll.push(src); sPlayed++;
-  /* 保险：到时没收到 ended 的也强制断开（节点堆着不放是手机崩的常见原因），正常一次只有十来个 */
+  if((sPlayed&3)===0) try{ sessionStorage.setItem('gs.sndlast', JSON.stringify({id:S&&S.id, pos:+pos.toFixed(1), en, played:sPlayed, live:sAll.length, bufs:Object.keys(sBuf).length, e:{s:e.s,f:e.fret,v:+e.vel.toFixed(2)}, t:Date.now()})); }catch(x){}
+  /* 保险：到时没收到 ended 的也强制断开；在响的超过 S_LIVE 个就把最老的收掉（那些只剩尾音，听不出） */
   const lim=t-S_LEN-0.5;
-  if(sAll.length>24) sAll=sAll.filter(v=>{ if(v._t0>lim) return true; sndFree(v); return false; });
+  if(sAll.length>S_LIVE){
+    sAll=sAll.filter(v=>{ if(v._t0>lim) return true; sndFree(v); return false; });
+    while(sAll.length>S_LIVE){ const v=sAll.shift(); try{ if(v._t0<=t){ v._g.gain.setTargetAtTime(0,t,0.02); v.stop(t+0.2); } else sndKill(v); }catch(x){} if(sVoice[v._s]===v) sVoice[v._s]=null; }
+  }
 }
 function sndCancel(){                              /* 重新对齐：还没响的作废（会按新锚点重排），正在响的留着 */
   if(!acx) return; const now=acx.currentTime;
-  sAll=sAll.filter(v=>{ if(v._t0<=now+0.005) return true; try{ v.stop(0); }catch(e){} sndFree(v); return false; });
+  sAll=sAll.filter(v=>{ if(v._t0<=now+0.005) return true; sndKill(v); return false; });
 }
 function sndHush(){                                /* 停住：全部 40ms 内收掉 */
+  try{ sessionStorage.removeItem('gs.sndlast'); }catch(x){}
   if(!acx) return; const now=acx.currentTime;
-  sAll.forEach(v=>{ try{ if(v._t0>now){ v.stop(0); sndFree(v); } else { v._g.gain.setTargetAtTime(0,now,0.04); v.stop(now+0.3); } }catch(e){} });
-  sAll=sAll.filter(v=>v._t0<=now);
+  sAll.forEach(v=>{ try{ if(v._t0>now){ sndKill(v); } else { v._g.gain.setTargetAtTime(0,now,0.04); v.stop(now+0.3); } }catch(e){} });
   sVoice=[null,null,null,null,null,null];
 }
+/* 手机上试听时整页崩掉会自动重载：上次的记录还在 sessionStorage 里，就是崩前最后一个音。报出来，用户截图就能告诉我崩在哪 */
+(function(){ try{ const r=sessionStorage.getItem('gs.sndlast'); if(!r) return; sessionStorage.removeItem('gs.sndlast'); sndErr='上次异常退出 '+r;
+  const d=JSON.parse(r); setTimeout(()=>say('上次试听异常退出：第 '+d.played+' 个音 · 位置 '+d.pos+' · 弦 '+(d.e.s+1)+' 品 '+d.e.f),1500); }catch(x){} })();
 function setSnd(on, user){                      /* user：是用户亲手按的（按钮 / 快捷键），不是开谱时恢复设置 */
   on=!!on;
   if(on && user && S && !EV.length){ say(S.score ? '这首的六线谱没读出可以弹的音' : '图片谱没有音符数据，试听只对矢量谱有效'); return; }
   SND=on; lss('snd',SND?'1':'0');                 /* 开图片谱不改设置：按钮藏起来、不发声，回到矢量谱照旧 */
+  FALL.quiet(SND);                                 /* 试听开着就不飘特效（用户定） */
+  if(SND && user && FALL.want!=='none') setTimeout(()=>say('试听时暂停飘落特效'),0);
   $('snd').hidden=!(S&&S.score); $('snd').setAttribute('aria-pressed',String(SND));
   if(SND){ audio(); anchor(); } else sndHush();
 }
@@ -3818,7 +3838,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playin
    只读暴露，不提供任何修改入口，对正常使用没有影响。 */
 window.__GS = {
   get song(){ return S; },
-  get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing}; },
+  get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
   get play(){ return PL; },
   get total(){ return TOT; },
   get ribbon(){ return ribbon; },
