@@ -929,7 +929,10 @@ function build_sheet(d, t, seq) {
         if (String(n.deg === null || n.deg === undefined ? 'None' : n.deg) !== '0') vn.push([Tt + acc, Tt + acc + n.dur]);
         acc += n.dur;
       }
-      const dashes = syls.length === 1 ? range(Math.floor(syls[0][0]) + 1, Math.ceil(b.beats)) : [];
+      const dashes = [];                     // 每个字后面、到下一个字起拍前的整拍各补一个「-」（用户 2026-10-31）
+      syls.forEach((sy, si) => { const last = si + 1 >= syls.length, nxt = last ? Number(b.beats) : syls[si + 1][0];
+        if (!(last || nxt - sy[0] >= 2 - 1e-6)) return;     // 字间隔 ≥ 2 拍才补；最后一个字照旧补到小节末
+        for (let kb = Math.floor(sy[0]) + 1; kb < Math.ceil(b.beats); kb++) if (kb < nxt - 1e-6) dashes.push(kb); });
       rowbars.push({ ri, bi, T: Tt, beats: b.beats, sec: bi === sec_bi ? sec : '', newrow: bi === b0,
         chords: ccs.map(cc => [Number(or(get(cc, 'at'), 0)), cc.name]), syls, dashes, vn });
       Tt += b.beats;
