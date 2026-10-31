@@ -2651,7 +2651,8 @@ let SND=false;                  /* 试听：按谱发声（引擎见下文「试
 let DRM=false;                  /* 鼓伴奏（见下文「鼓」一节） */
 let VOX=false;                  /* 人声（离线合成的音轨，见下文「人声」一节） */
 let xBuf=null, xSrc=null, xOld=[], xBus=null, xId='', xErr='', xLoading=null, xT=0, xPos=0, xEnd=0;
-let xNode=null, xWk=null, xWkId='', xOn=false, xRate=1;   /* AudioWorklet 时间伸缩：变速不变调 */
+let xNode=null, xWk=null, xWkId='', xOn=false, xRate=1;
+let xBytes=null, xBytesId='', xFetching=null, xRetryAt=0, xRetries=0;   /* 开谱时只预取字节，解码等到有了用户手势的 AudioContext 再做 */   /* AudioWorklet 时间伸缩：变速不变调 */
 /* 音量（用户 2026-10-31：做成可调）：试听 / 鼓 / 节拍器各一个倍率，0～1.5，默认 1，记在 gs.vol */
 let VOL={snd:1,drum:1,met:1,vox:1};
 try{ const v=JSON.parse(lsg('vol')||'null'); if(v) for(const k in VOL) if(typeof v[k]==='number') VOL[k]=Math.max(0,Math.min(1.5,v[k])); }catch(e){}
@@ -3715,21 +3716,32 @@ function voxWorklet(){                       /* 加载一次；失败就退回 B
 function voxInfo(){ return (S&&S.vox&&S.vox.f)?S.vox:null; }
 function voxSpu0(){ const v=voxInfo(); return (v&&v.bpm) ? 60/(v.bpm*(v.grp||GRP)) : 60/(bpm*GRP); }
 function voxBus(){ if(xBus) return xBus; xBus=acx.createGain(); xBus.gain.value=VOL.vox; xBus.connect(acx.destination); return xBus; }
+function voxFetch(){                       /* 只取字节（不要 AudioContext）：开谱恢复「人声」时先把 0.9 MB 拉回来，按播放时只剩解码 */
+  const v=voxInfo(); if(!v||!S) return Promise.resolve(null);
+  if(xBytes && xBytesId===S.id) return Promise.resolve(xBytes);
+  if(xFetching && xBytesId===S.id) return xFetching;
+  const vm=/[?&]v=([0-9a-f]+)/.exec(location.search);
+  const url='songs/'+S.id+'/'+v.f+(vm?'?v='+vm[1]:''), id=S.id;
+  xBytesId=id; xBytes=null;
+  xFetching=fetch(url).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
+    .then(ab=>{ if(xBytesId===id) xBytes=ab; return ab; })
+    .catch(e=>{ xErr=String(e&&e.message||e); return null; })
+    .finally(()=>{ xFetching=null; });
+  return xFetching;
+}
 function voxLoad(){
   const v=voxInfo(); if(!v||!acx) return Promise.resolve(false);
   if(xBuf && xId===S.id) return Promise.resolve(true);
   if(xLoading && xId===S.id) return xLoading;
   xId=S.id; xBuf=null; xErr='';
-  const vm=/[?&]v=([0-9a-f]+)/.exec(location.search);
-  const url='songs/'+S.id+'/'+v.f+(vm?'?v='+vm[1]:'');
   const id=S.id;
-  xLoading=fetch(url).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
+  xLoading=voxFetch().then(ab=>{ if(!ab) throw new Error(xErr||'fetch'); return ab.slice(0); })   /* decodeAudioData 会把 buffer 掏空，解码用副本，失败了还能重试 */
     .then(ab=>new Promise((res,rej)=>{ let done=false; const ok=b=>{ if(!done){ done=true; res(b); } }, bad=e=>{ if(!done){ done=true; rej(e); } };
                                        const p=acx.decodeAudioData(ab,ok,bad); if(p&&p.then) p.then(ok,bad); }))   /* 旧 Safari 只认回调 */
     .then(b=>{ if(xId===id) xBuf=b; return voxWorklet().then(ok=>{
         if(ok && xNode && xBuf && xId===id){ const d=new Float32Array(xBuf.getChannelData(0)); xNode.port.postMessage({type:'load',data:d},[d.buffer]); xWkId=id; }
         return true; }); })
-    .catch(e=>{ xErr=String(e&&e.message||e); say('人声音轨没能载入'); return false; })
+    .catch(e=>{ xErr='decode: '+String(e&&e.message||e); xRetries++; xRetryAt=performance.now()+2000; if(xRetries>=4) say('人声音轨没能载入'); return false; })
     .finally(()=>{ xLoading=null; });
   return xLoading;
 }
@@ -3742,11 +3754,11 @@ function voxStart(when, u){                 /* 在音频时刻 when 从单位 u 
   if(!xBuf||!acx) return;
   const spu0=voxSpu0(), spu=60/(bpm*GRP), rate=spu0/spu;
   if(xNode && xWkId===S.id){                   /* 变速不变调：worklet 自己按音频时钟起播 */
-    if(u*spu0>=xBuf.duration) return;
+    if(u*spu0>=xBuf.duration){ xEnd=1; return; }
     xNode.port.postMessage({type:'play', at:when, pos:u*spu0, rate}); xOn=true; xRate=rate; xT=when; xPos=u; xEnd=0; return; }
   let off=u*spu0; const now=acx.currentTime;
   if(when<now){ off+=(now-when)*rate; when=now; }   /* 锚点在过去（中途续播 / 刚载入）：从相应位置接上 */
-  if(off>=xBuf.duration) return;
+  if(off>=xBuf.duration){ xEnd=1; return; }
   const s=acx.createBufferSource(); s.buffer=xBuf; s.playbackRate.value=rate; s.connect(voxBus());
   s.start(when, off); xSrc=s; xT=when; xPos=u; xEnd=0;
 }
@@ -3757,6 +3769,14 @@ function voxAnchor(){
   voxStart(aT,aPos);
 }
 function voxSched(){                        /* 选段循环：到段尾前 1 秒把下一遍排上，老的那一段恰在段尾停 */
+  if(VOX && acx && (playing||armed) && !xEnd && !(xSrc||xOn) && voxInfo()){
+    /* 自愈（用户 2026-11-01：开谱时「人声」亮着，按播放却不唱，要再点两下才唱）：
+       播放中该唱却没在唱——解码还没完成、开谱时解码失败过（Safari 没手势建的上下文）、或上下文刚从 suspended 恢复——
+       有了音轨就从当前位置接上；没音轨且上下文在跑就再试着载入（2 秒一次，最多 4 次） */
+    if(xBuf && xId===S.id){ voxStart(aT,aPos); }
+    else if(!xLoading && acx.state==='running' && xRetries<4 && performance.now()>=xRetryAt){ voxLoad().then(ok=>{ if(ok&&VOX&&(playing||armed)&&!(xSrc||xOn)) voxStart(aT,aPos); }); }
+    return;
+  }
   if(!VOX||!acx||!(xSrc||xOn)||!SEL||!(playing||armed)||xEnd) return;
   if(xPos>=SEL.b-1e-6) return;
   const spu=60/(bpm*GRP), tb=xT+(SEL.b-xPos)*spu;
@@ -3771,7 +3791,10 @@ function setVox(on, user){                   /* user：是用户亲手按的（�
   if(on && user && S && !v){ say(S.score ? '这首还没做人声音轨' : '图片谱没有人声音轨'); return; }
   VOX=on; lss('vox',VOX?'1':'0');
   $('vox').hidden=!v; $('vox').setAttribute('aria-pressed',String(VOX)); panelLights();
-  if(VOX && v){ audio(); voxLoad().then(()=>anchor()); } else voxHush();
+  if(VOX && v){
+    if(user){ audio(); voxLoad().then(()=>anchor()); }
+    else { xRetries=0; voxFetch().then(()=>{ if(acx && VOX) voxLoad(); }); }   /* 开谱恢复：先把字节拉回来；已有上下文（节拍器等建的）就顺手解码，没有就等按播放 */
+  } else voxHush();
 }
 
 function setSnd(on, user){                      /* user：是用户亲手按的（按钮 / 快捷键），不是开谱时恢复设置 */
@@ -4213,7 +4236,7 @@ window.__GS = {
   get song(){ return S; },
   get drum(){ return {on:DRM, hits:dHits, pend:dPend.length}; },
   get ev(){ return EV; },   /* 自检用：模拟演奏的事件表 */
-    get vox(){ return {on:VOX, info:voxInfo(), loaded:!!xBuf, dur:xBuf&&xBuf.duration, src:!!xSrc||xOn, old:xOld.length, rate:xOn?xRate:(xSrc&&xSrc.playbackRate.value), mode:(xNode&&xWkId===(S&&S.id))?'worklet':'buffer', xT, xPos, xEnd, err:xErr, gain:xBus&&xBus.gain.value}; },
+    get vox(){ return {on:VOX, info:voxInfo(), loaded:!!xBuf, bytes:!!xBytes, retries:xRetries, acx:acx&&acx.state, dur:xBuf&&xBuf.duration, src:!!xSrc||xOn, old:xOld.length, rate:xOn?xRate:(xSrc&&xSrc.playbackRate.value), mode:(xNode&&xWkId===(S&&S.id))?'worklet':'buffer', xT, xPos, xEnd, err:xErr, gain:xBus&&xBus.gain.value}; },
   get vol(){ return {v:VOL, snd:sBus&&sBus.gain.value, drum:dBus&&dBus.gain.value}; },
   shareUrl: () => shareUrl(),
   get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, leg:sLeg, rates:sVoice.map(v=>v?+v.playbackRate.value.toFixed(4):null), bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
