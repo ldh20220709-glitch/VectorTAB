@@ -3283,14 +3283,33 @@ function sndBuild(){
   EV=[]; en=-1; sPlayed=0;
   const sc=S&&S.score; if(!sc||!sc.rows||!PL.length) return;
   let grip=null;                               /* 当前和弦指位（六弦→一弦 6 格），跨小节沿用 */
+  /* 强弱（用户要的）：按拍位定力度。/8 拍：每组（附点四分）起拍强，组内八分弱；/4 拍：第 1 拍最强、中间拍次强、
+     其他拍中等，半拍 0.74、四分之一拍 0.68；谱上的重音记号再加 0.18。力度也决定缓冲的亮度档，重弹更亮 */
+  const sig0=(sc.meta&&sc.meta.sig)||S.sig||'4/4'; let sigNow=sig0;
+  /* 这首的指弹行有没有着重号：一个都没有（128 首里 Game of Thrones、云宫迅音等几首）就不分旋律/伴奏，免得整首都被压轻 */
+  const hasAcc=sc.rows.some(r=>r.tab_only && (r.tab.bars||[]).some(b=>(b.notes||[]).some(n=>n.acc)));
+  const near=(x,k)=>Math.abs(x-Math.round(x/k)*k)<0.02;
+  const weight=(acc,beats,sig)=>{
+    if(/\/8$/.test(sig)){ if(near(acc,1.5)) return acc<0.02?1.0:0.9; if(near(acc,0.5)) return 0.76; return 0.68; }
+    if(near(acc,1)){ if(acc<0.02) return 1.0; const mid=beats/2; return (beats>=4 && Math.abs(acc-mid)<0.02) ? 0.9 : 0.82; }
+    if(near(acc,0.5)) return 0.74;
+    return 0.68; };
   PL.forEach((m,i)=>{
     const row=sc.rows[m.sr]; if(!row||!row.tab) return;
+    const tonly=!!row.tab_only;                   /* 指弹行：六线谱上方的着重号 > 标的是旋律音 */
     const tb=row.tab.bars||[], jb=(row.jp&&row.jp.bars)||[];
-    const tied=new Set(), lega=new Set();
-    (row.tab.slurs||[]).forEach(q=>{ (q.k==='tie'?tied:lega).add(q.b1+','+q.n1+','+q.s); });
+    const tied=new Set(), lega=new Map();            /* lega: 落音 key → {k: 'H'|'P'|'sl', from: 起点品位} */
+    const fretAt=(bi_,ni_,s_)=>{ const b_=tb[bi_], n_=b_&&b_.notes&&b_.notes[ni_]; if(!n_) return null;
+      const h_=(n_.hit||[]).find(h=>h.s===s_&&isdig(h.f)&&!(h.off>0)); return h_?+h_.f:null; };
+    (row.tab.slurs||[]).forEach(q=>{ const key=q.b1+','+q.n1+','+q.s;
+      if(q.k==='tie'){ tied.add(key); return; }
+      const from=fretAt(q.b0,q.n0,q.s), to=fretAt(q.b1,q.n1,q.s);
+      let k=q.k||''; if(k!=='H'&&k!=='P'&&k!=='sl') k=(from!=null&&to!=null&&to<from)?'P':'H';   /* 没标字母的连线：上行当击弦、下行当勾弦 */
+      lega.set(key,{k,from}); });
     let u0=CUM[i];
     for(let bi=m.b0; bi<m.b1 && bi<tb.length; bi++){
       const b=tb[bi], units=m.bars[bi-m.b0]||0, beats=b.beats||1;
+      if(b.sig) sigNow=b.sig;
       const j=jb[bi]||{};
       const chs=(j.chords&&j.chords.length)?j.chords:(j.grip?[{grip:j.grip,at:0}]:[]);
       let ci=0, acc=0;
@@ -3300,20 +3319,32 @@ function sndBuild(){
         acc+=n.dur||0;
         if(n.rest){ EV.push({u, uo:0, dts:0, mute:true}); return; }
         if(!hit.length) return;
-        const vel=n.acc?1.0:0.78;
+        /* acc 已经加过这个音的时值，拍位要减回去。
+           指弹行（用户 2026-10-31）：着重号的音弹满（旋律），没标的按拍位再整体压到 0.8 倍（伴奏），旋律才浮得出来；
+           弹唱行：按拍位，重音记号加一档 */
+        const w=weight(acc-(n.dur||0),beats,sigNow);
+        const vel=(tonly&&hasAcc) ? (n.acc?1.0:w*0.8) : Math.min(1.0, w+(n.acc?0.18:0));
         const arrow=hit.find(h=>h.f==='up'||h.f==='down'||h.f==='strum');
         const roll=hit.some(h=>h.f==='roll');
         const digs=hit.filter(h=>h.s>=0&&h.s<=5&&(isdig(h.f)||h.f==='x'||h.f==='slap'));
         let hs=[];
+        /* 同一音内的连音：前倚音（off<0，带 lk）→ 主音；主音 → 右侧落音（off>0，lk / ham / tech） */
+        const pre={}, main={};
+        for(const h of digs){ if(!isdig(h.f)) continue; if(h.off<0) pre[h.s]={f:+h.f,k:h.lk||'H'}; else if(!(h.off>0)) main[h.s]=+h.f; }
         for(const h of digs){
           const key=bi+','+ni+','+h.s;
           if(h.paren||tied.has(key)) continue;        /* 括号音 = 延续上一个音；延音线后音不拨 */
           let fret=null;
           if(isdig(h.f)) fret=+h.f;
           else if(h.f==='x'){ const g=grip&&grip[5-h.s]; if(g!=null&&isdig(g)) fret=+g; }
-          const e={u, uo:0, dts:0, s:h.s, fret, vel:vel*(lega.has(key)?0.6:1)};
+          const e={u, uo:0, dts:0, s:h.s, fret, vel};
+          const lg=lega.get(key);
           if(h.off<0){ e.dts=-0.07; e.vel*=0.6; }      /* 前倚音：提前一点、轻 */
-          else if(h.off>0){ e.uo=du*0.5; e.vel*=0.6; } /* 同一音内右侧的击弦落音：半个时值后轻弹 */
+          else if(h.off>0){ e.uo=du*0.5; e.vel*=0.6;   /* 同一音内右侧的落音：半个时值后，击/勾/滑过去 */
+            const k=(h.lk==='sl'?'sl':(h.lk==='P'||n.tech==='P')?'P':'H'); if(fret!=null) e.leg={k, from:main[h.s]}; }
+          else if(fret!=null && pre[h.s] && pre[h.s].k){ const p=pre[h.s]; const k=p.k==='sl'?'sl':(p.k==='P'?'P':'H');   /* 倚音带过来的 */
+            e.leg={k, from:p.f}; if(k==='sl') e.dts=-0.05; }
+          else if(lg && fret!=null){ e.leg=lg; e.vel*=0.6; }   /* 连线落音 */
           hs.push(e);
         }
         if(arrow && !hs.length && grip){              /* 空箭头：按当前和弦扫箭头覆盖的几根弦 */
@@ -3324,7 +3355,7 @@ function sndBuild(){
           const bassFirst = !(arrow && arrow.f==='down');
           hs.sort((a,c)=>bassFirst ? c.s-a.s : a.s-c.s);
           const gap=roll&&!arrow ? 0.028 : 0.012;
-          hs.forEach((e,k)=>{ e.dts+=k*gap; if(hs.length>2) e.vel*=0.85; });
+          hs.forEach((e,k)=>{ e.dts+=k*gap; if(hs.length>2) e.vel*=0.85; if(arrow&&!bassFirst) e.vel*=0.88; });   /* 回扫比下扫轻 */
         }
         EV.push(...hs);
       });
@@ -3407,15 +3438,40 @@ function sndStop(s,t,tau){
        v._g.gain.setTargetAtTime(0,t,tau); v.stop(Math.max(t,v._t0)+tau*8); }catch(e){}
 }
 function sndFree(v){ try{ v.disconnect(); }catch(x){} try{ v._g.disconnect(); }catch(x){} v.onended=null; if(sVoice[v._s]===v) sVoice[v._s]=null; }
+let sLeg=0;                                        /* 做过几次击/勾/滑（自测用） */
+/* 击弦 H / 勾弦 P / 滑音 sl：真琴不重新拨弦，是正在响的弦变音高。
+   这里改正在响的音源的 playbackRate（相对它缓冲的基准音高）：击/勾瞬间到位，滑音 80ms 线性滑过去；
+   击弦补一下很轻、很短的手指触弦声，勾弦补一下手指拨离弦的轻响。弦上没有在响的音（比如刚起头）就退回普通轻拨。 */
+function sndLegato(e,t){
+  const v=sVoice[e.s]; if(!v || v._midi==null || v._t0>t-0.02) return false;
+  const midi=S_MIDI[e.s]+e.fret+sndCapo(), r=Math.pow(2,(midi-v._base)/12), r0=Math.pow(2,(v._midi-v._base)/12);
+  if(Math.abs(midi-v._base)>14) return false;       /* 跨度太大，变速音色就假了，老实重拨 */
+  try{
+    v.playbackRate.cancelScheduledValues(t); v.playbackRate.setValueAtTime(r0,t);
+    if(e.leg.k==='sl') v.playbackRate.linearRampToValueAtTime(r,t+0.08); else v.playbackRate.setValueAtTime(r,t+0.001);
+    v._midi=midi;
+    if(e.leg.k!=='sl'){                              /* 手指触弦 / 拨离的那一点点响 */
+      const src=acx.createBufferSource(), g=acx.createGain();
+      src.buffer=sndBuf(midi, 0.5); g.gain.value=Math.min(0.5, e.vel*(e.leg.k==='P'?0.4:0.3));
+      g.gain.setTargetAtTime(0,t+0.04,0.1);
+      src.connect(g); g.connect(sPan[e.s]||sBus); src._t0=t; src._g=g; src._s=-1; src._midi=null;
+      src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
+      src.start(t); src.stop(t+0.6); sAll.push(src);
+    }
+  }catch(x){ return false; }
+  sLeg++; sPlayed++; return true;
+}
 function sndPlay(e,t){
   sndBusGet();
   if(e.mute){ for(let s=0;s<6;s++) sndStop(s,t,0.03); return; }
+  if(e.leg && e.fret!=null && sndLegato(e,t)) return;
   sndStop(e.s,t,0.004);
   const src=acx.createBufferSource(), g=acx.createGain();
-  src.buffer = e.fret==null ? sndNoiseBuf() : sndBuf(S_MIDI[e.s]+e.fret+sndCapo(), e.vel);
+  const midi=e.fret==null?null:S_MIDI[e.s]+e.fret+sndCapo();
+  src.buffer = midi==null ? sndNoiseBuf() : sndBuf(midi, e.vel);
   g.gain.value=Math.min(1.2, e.vel*(e.fret==null?0.5:1)*(0.86+0.028*(5-e.s)));
   src.connect(g); g.connect(sPan[e.s]||sBus);
-  src._t0=t; src._g=g; src._s=e.s;
+  src._t0=t; src._g=g; src._s=e.s; src._base=midi; src._midi=midi;
   src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
   src.start(t); sVoice[e.s]=src; sAll.push(src); sPlayed++;
   if((sPlayed&3)===0) try{ sessionStorage.setItem('gs.sndlast', JSON.stringify({id:S&&S.id, pos:+pos.toFixed(1), en, played:sPlayed, live:sAll.length, bufs:Object.keys(sBuf).length, e:{s:e.s,f:e.fret,v:+e.vel.toFixed(2)}, t:Date.now()})); }catch(x){}
@@ -3849,7 +3905,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playin
    只读暴露，不提供任何修改入口，对正常使用没有影响。 */
 window.__GS = {
   get song(){ return S; },
-  get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
+  get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, leg:sLeg, rates:sVoice.map(v=>v?+v.playbackRate.value.toFixed(4):null), bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
   get play(){ return PL; },
   get total(){ return TOT; },
   get ribbon(){ return ribbon; },
