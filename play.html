@@ -3283,6 +3283,7 @@ function sndBuild(){
   EV=[]; en=-1; sPlayed=0;
   const sc=S&&S.score; if(!sc||!sc.rows||!PL.length) return;
   let grip=null;                               /* 当前和弦指位（六弦→一弦 6 格），跨小节沿用 */
+  const lastF=[null,null,null,null,null,null]; /* 每根弦最近按过的品位：没有和弦图可查时，空箭头/空琶音就扫「手还按着的」 */
   /* 强弱（用户要的）：按拍位定力度。/8 拍：每组（附点四分）起拍强，组内八分弱；/4 拍：第 1 拍最强、中间拍次强、
      其他拍中等，半拍 0.74、四分之一拍 0.68；谱上的重音记号再加 0.18。力度也决定缓冲的亮度档，重弹更亮 */
   const sig0=(sc.meta&&sc.meta.sig)||S.sig||'4/4'; let sigNow=sig0;
@@ -3337,6 +3338,7 @@ function sndBuild(){
           let fret=null;
           if(isdig(h.f)) fret=+h.f;
           else if(h.f==='x'){ const g=grip&&grip[5-h.s]; if(g!=null&&isdig(g)) fret=+g; }
+          if(fret!=null) lastF[h.s]=fret;
           const e={u, uo:0, dts:0, s:h.s, fret, vel};
           const lg=lega.get(key);
           if(h.off<0){ e.dts=-0.07; e.vel*=0.6; }      /* 前倚音：提前一点、轻 */
@@ -3347,9 +3349,9 @@ function sndBuild(){
           else if(lg && fret!=null){ e.leg=lg; e.vel*=0.6; }   /* 连线落音 */
           hs.push(e);
         }
-        if(arrow && !hs.length && grip){              /* 空箭头：按当前和弦扫箭头覆盖的几根弦 */
-          const s0=Math.max(0,Math.round(+arrow.a||0)), s1=Math.min(5,Math.round(arrow.b!=null?+arrow.b:5));
-          for(let s=s0;s<=s1;s++){ const g=grip[5-s]; if(g!=null&&isdig(g)) hs.push({u, uo:0, dts:0, s, fret:+g, vel:vel*0.8}); }
+        if((arrow||roll) && !hs.length){              /* 空箭头 / 空琶音（波浪线旁边没写数字）：按当前和弦扫；没有和弦图就扫各弦最近按过的品位 */
+          const s0=arrow?Math.max(0,Math.round(+arrow.a||0)):0, s1=arrow?Math.min(5,Math.round(arrow.b!=null?+arrow.b:5)):5;
+          for(let s=s0;s<=s1;s++){ const g=grip?grip[5-s]:lastF[s]; if(g!=null&&isdig(g)) hs.push({u, uo:0, dts:0, s, fret:+g, vel:vel*0.8}); }
         }
         if(arrow||roll){
           const bassFirst = !(arrow && arrow.f==='down');
