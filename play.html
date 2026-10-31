@@ -3260,7 +3260,9 @@ function hush(){ pend.forEach(o=>{try{o.stop();}catch(e){}}); pend=[]; }
    击/勾/滑的落音轻弹，延音线（tie）的后一个音不再拨。
    排程和节拍器一样：独立定时器、1 秒预排窗口、按音频时钟；锚点自己拷一份（sT/sPos），
    选段绕回时各绕各的，不互相改对方的锚点。 */
-let EV=[], en=-1, sT=0, sPos=0, sVoice=[null,null,null,null,null,null], sAll=[], sBus=null, sBuf={}, sNoise=null, sPlayed=0;
+let sndErr='';
+let EV=[], en=-1, sT=0, sPos=0, sVoice=[null,null,null,null,null,null], sAll=[], sBus=null, sPan=[], sBuf={}, sNoise=null, sPlayed=0;
+const S_SR=24000, S_LEN=2.4, S_MAX=32;        /* 缓冲 24kHz × 2.4s（约 230KB 一个）、最多缓存 32 个：手机 WebKit 内存紧，越轻越好 */
 const S_MIDI=[64,59,55,50,45,40];          /* 六线谱从上到下：一弦 e4 … 六弦 E2 */
 const isdig=v=>/^\d+$/.test(String(v));
 function sndCapo(){ const m=/\d+/.exec(String((S&&S.score&&S.score.meta&&S.score.meta.capo)||'')); return m?Math.min(12,+m[0]):0; }
@@ -3331,7 +3333,7 @@ function sndSched(){
     if(en>=EV.length) break;
     const e=EV[en], t=sT+(e.u-sPos+(e.uo||0))*spu+(e.dts||0);
     if(t>hz) break;
-    if(t>now-0.03) sndPlay(e, Math.max(t,now));
+    if(t>now-0.03){ try{ sndPlay(e, Math.max(t,now)); }catch(x){ sndErr=String(x&&x.message||x); } }
     en++;
   }
 }
@@ -3340,14 +3342,15 @@ function sndBusGet(){
   const comp=acx.createDynamicsCompressor();
   comp.threshold.value=-16; comp.ratio.value=4; comp.attack.value=0.003; comp.release.value=0.12;
   comp.connect(acx.destination);
-  sBus=acx.createGain(); sBus.gain.value=0.75; sBus.connect(comp);
-  try{                                             /* 一点琴箱余响：合成的脉冲响应，0.5 秒 */
-    const sr=acx.sampleRate, N=Math.floor(sr*0.5), ir=acx.createBuffer(2,N,sr);
-    for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0;
-      for(let i=0;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-i/(sr*0.11)); lp+=0.25*(w-lp); d[i]=lp; } }
-    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.22;
-    sBus.connect(cv); cv.connect(wg); wg.connect(comp);
-  }catch(e){}
+  sBus=acx.createGain(); sBus.gain.value=0.8; sBus.connect(comp);
+  /* 每根弦一个固定的声像节点（一弦偏右、六弦偏左），每个音只建「源 + 增益」两个节点就够了。
+     原先每个音还各建一个声像节点、总线上再挂一个卷积混响——手机 WebKit 播到一半整页崩掉（内存），都去掉了 */
+  sPan=[];
+  for(let s=0;s<6;s++){
+    let n=sBus;
+    if(acx.createStereoPanner){ try{ n=acx.createStereoPanner(); n.pan.value=0.3-s*0.12; n.connect(sBus); }catch(e){ n=sBus; } }
+    sPan.push(n);
+  }
   return sBus;
 }
 /* Karplus-Strong：噪声激励一个周期 → 延迟线 + 两点平均（高频衰得快，低音弦余音长）；
@@ -3355,8 +3358,8 @@ function sndBusGet(){
 function sndBuf(midi, vel){
   const br=vel>0.9?2:(vel<0.65?0:1), key=midi+'/'+br;
   if(sBuf[key]) return sBuf[key];
-  const sr=acx.sampleRate, f=440*Math.pow(2,(midi-69)/12), P=sr/f-0.5;
-  const Pi=Math.floor(P), fr=P-Pi, N=Math.floor(sr*3.0), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0);
+  const sr=S_SR, f=440*Math.pow(2,(midi-69)/12), P=sr/f-0.5;
+  const Pi=Math.floor(P), fr=P-Pi, N=Math.floor(sr*S_LEN), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0);
   const hl = f<120 ? 0.85 : f<250 ? 0.7 : 0.5;    /* 幅度半衰期（秒） */
   const g=Math.pow(0.5, 1/(hl*sr)), k=[0.3,0.5,0.75][br];
   let lp=0, mean=0; for(let i=0;i<=Pi+1;i++){ lp+=k*((Math.random()*2-1)-lp); y[i]=lp; mean+=lp; }
@@ -3365,13 +3368,14 @@ function sndBuf(midi, vel){
   for(let n=Pi+2;n<N;n++){ const a=y[n-Pi]*(1-fr)+y[n-Pi-1]*fr, b=y[n-Pi-1]*(1-fr)+y[n-Pi-2]*fr; y[n]=g*0.5*(a+b); }
   let mx=1e-6; for(let i=0;i<Math.min(N,Pi*3);i++) mx=Math.max(mx,Math.abs(y[i]));
   const sc=0.8/mx; for(let i=0;i<N;i++) y[i]*=sc;
-  const F0=Math.floor(sr*2.4);                    /* 最后 0.6 秒余弦淡出：缓冲到头不能硬切，低音弦那时还有 -18dB，会「咔」一声 */
+  const F0=Math.floor(sr*(S_LEN-0.6));            /* 最后 0.6 秒余弦淡出：缓冲到头不能硬切，低音弦那时还有 -18dB，会「咔」一声 */
   for(let i=F0;i<N;i++) y[i]*=0.5*(1+Math.cos(Math.PI*(i-F0)/(N-F0)));
+  const ks=Object.keys(sBuf); if(ks.length>=S_MAX) delete sBuf[ks[0]];   /* 最老的让位 */
   sBuf[key]=buf; return buf;
 }
 function sndNoiseBuf(){
   if(sNoise) return sNoise;
-  const sr=acx.sampleRate, N=Math.floor(sr*0.07), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0); let lp=0;
+  const sr=S_SR, N=Math.floor(sr*0.07), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0); let lp=0;
   for(let i=0;i<N;i++){ lp+=0.35*((Math.random()*2-1)-lp); y[i]=lp*Math.exp(-i/(sr*0.012))*0.9; }
   sNoise=buf; return buf;
 }
@@ -3380,28 +3384,30 @@ function sndStop(s,t,tau){
   try{ if(v._t0>t-0.001){ v.stop(0); return; }
        v._g.gain.setTargetAtTime(0,t,tau); v.stop(t+tau*8); }catch(e){}
 }
+function sndFree(v){ try{ v.disconnect(); }catch(x){} try{ v._g.disconnect(); }catch(x){} v.onended=null; if(sVoice[v._s]===v) sVoice[v._s]=null; }
 function sndPlay(e,t){
-  const bus=sndBusGet();
+  sndBusGet();
   if(e.mute){ for(let s=0;s<6;s++) sndStop(s,t,0.03); return; }
   sndStop(e.s,t,0.004);
   const src=acx.createBufferSource(), g=acx.createGain();
   src.buffer = e.fret==null ? sndNoiseBuf() : sndBuf(S_MIDI[e.s]+e.fret+sndCapo(), e.vel);
   g.gain.value=Math.min(1.2, e.vel*(e.fret==null?0.5:1)*(0.86+0.028*(5-e.s)));
-  src.connect(g);
-  let out=g;
-  if(acx.createStereoPanner){ const p=acx.createStereoPanner(); p.pan.value=0.3-e.s*0.12; g.connect(p); out=p; }
-  out.connect(bus);
+  src.connect(g); g.connect(sPan[e.s]||sBus);
   src._t0=t; src._g=g; src._s=e.s;
-  src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); if(sVoice[e.s]===src) sVoice[e.s]=null; try{ out.disconnect(); }catch(x){} };
+  src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
   src.start(t); sVoice[e.s]=src; sAll.push(src); sPlayed++;
+  /* 保险：到时没收到 ended 的也强制断开（节点堆着不放是手机崩的常见原因），正常一次只有十来个 */
+  const lim=t-S_LEN-0.5;
+  if(sAll.length>24) sAll=sAll.filter(v=>{ if(v._t0>lim) return true; sndFree(v); return false; });
 }
 function sndCancel(){                              /* 重新对齐：还没响的作废（会按新锚点重排），正在响的留着 */
   if(!acx) return; const now=acx.currentTime;
-  sAll.slice().forEach(v=>{ if(v._t0>now+0.005){ try{ v.stop(0); }catch(e){} } });
+  sAll=sAll.filter(v=>{ if(v._t0<=now+0.005) return true; try{ v.stop(0); }catch(e){} sndFree(v); return false; });
 }
 function sndHush(){                                /* 停住：全部 40ms 内收掉 */
   if(!acx) return; const now=acx.currentTime;
-  sAll.slice().forEach(v=>{ try{ if(v._t0>now){ v.stop(0); } else { v._g.gain.setTargetAtTime(0,now,0.04); v.stop(now+0.3); } }catch(e){} });
+  sAll.forEach(v=>{ try{ if(v._t0>now){ v.stop(0); sndFree(v); } else { v._g.gain.setTargetAtTime(0,now,0.04); v.stop(now+0.3); } }catch(e){} });
+  sAll=sAll.filter(v=>v._t0<=now);
   sVoice=[null,null,null,null,null,null];
 }
 function setSnd(on, user){                      /* user：是用户亲手按的（按钮 / 快捷键），不是开谱时恢复设置 */
@@ -3812,7 +3818,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playin
    只读暴露，不提供任何修改入口，对正常使用没有影响。 */
 window.__GS = {
   get song(){ return S; },
-  get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, bufs:Object.keys(sBuf).length, buf:sBuf, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing}; },
+  get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing}; },
   get play(){ return PL; },
   get total(){ return TOT; },
   get ribbon(){ return ribbon; },
