@@ -3722,7 +3722,13 @@ function voxWorklet(){                       /* 加载一次；失败就退回 B
 }
 function voxInfo(){ return (S&&S.vox&&S.vox.f)?S.vox:null; }
 function voxSpu0(){ const v=voxInfo(); return (v&&v.bpm) ? 60/(v.bpm*(v.grp||GRP)) : 60/(bpm*GRP); }
-function voxBus(){ if(xBus) return xBus; xBus=acx.createGain(); xBus.gain.value=VOL.vox; xBus.connect(acx.destination); return xBus; }
+function voxBus(){ if(xBus) return xBus; xBus=acx.createGain(); xBus.gain.value=VOL.vox; xBus.connect(acx.destination);
+  /* 一点点房间混响（用户 2026-11-01：「没有感情」——干的合成人声像在耳边念，给一点空间感）：
+     和吉他同一套合成脉冲响应，更长一点（0.9s、衰减 0.25s），湿声 0.16 */
+  try{ const sr=acx.sampleRate, N=Math.floor(sr*0.9), ir=acx.createBuffer(2,N,sr);
+    for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0; for(let i=0;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-i/(sr*0.25)); lp+=0.2*(w-lp); d[i]=lp; } }
+    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.16; xBus.connect(cv); cv.connect(wg); wg.connect(acx.destination); }catch(e){}
+  return xBus; }
 function voxFetch(){                       /* 只取字节（不要 AudioContext）：开谱恢复「人声」时先把 0.9 MB 拉回来，按播放时只剩解码 */
   const v=voxInfo(); if(!v||!S) return Promise.resolve(null);
   if(xBytes && xBytesId===S.id) return Promise.resolve(xBytes);
