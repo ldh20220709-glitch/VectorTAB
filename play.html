@@ -2648,6 +2648,7 @@ let SND=false;                  /* 试听：按谱发声（引擎见下文「试
 let DRM=false;                  /* 鼓伴奏（见下文「鼓」一节） */
 let VOX=false;                  /* 人声（离线合成的音轨，见下文「人声」一节） */
 let xBuf=null, xSrc=null, xOld=[], xBus=null, xId='', xErr='', xLoading=null, xT=0, xPos=0, xEnd=0;
+let xNode=null, xWk=null, xWkId='', xOn=false, xRate=1;   /* AudioWorklet 时间伸缩：变速不变调 */
 /* 音量（用户 2026-10-31：做成可调）：试听 / 鼓 / 节拍器各一个倍率，0～1.5，默认 1，记在 gs.vol */
 let VOL={snd:1,drum:1,met:1,vox:1};
 try{ const v=JSON.parse(lsg('vol')||'null'); if(v) for(const k in VOL) if(typeof v[k]==='number') VOL[k]=Math.max(0,Math.min(1.5,v[k])); }catch(e){}
@@ -3656,6 +3657,58 @@ function setDrm(on){
    音轨按谱面默认速度 bpm0 渲染：游标在单位 u 时音轨应在 u*spu0 处（spu0 = 60/(bpm0*GRP)）。
    播放器变速就按 playbackRate = spu0/spu（= bpm/bpm0）跟着变，音高会随之略变，±10% 内听不出。
    锚点沿用节拍器的 aT/aPos；选段循环由 voxSched 在段尾前 1 秒把下一遍排上，和节拍器的绕回一致。 */
+/* 人声的变速不变调：AudioWorklet 里做 WSOLA（波形相似重叠相加）时间伸缩。
+   原来直接改 BufferSource 的 playbackRate，速度一改音高跟着跑（68 → 60 就低两个多半音，用户说「没在调上」）。
+   帧 2048、步 512、相位搜索 ±320 样本；速率恰好 1 时直接拷贝不处理。命令按音频时钟排程（play/stop 带 at），
+   精度到样本；没有 AudioWorklet 或 blob 模块不让加载时退回 BufferSource。 */
+const VOX_WORKLET = `
+class VoxStretch extends AudioWorkletProcessor{
+  constructor(){ super(); this.src=null; this.cmds=[]; this.on=false; this.pos=0; this.rate=1; this.k=0; this.prevQ=0; this.fade=0;
+    this.N=2048; this.H=512; this.T=320; this.win=new Float32Array(this.N);
+    for(let i=0;i<this.N;i++) this.win[i]=0.5-0.5*Math.cos(2*Math.PI*i/this.N);
+    this.ola=new Float32Array(this.N); this.fifo=new Float32Array(this.N*4); this.fh=0; this.ft=0; this.fc=0;
+    this.port.onmessage=e=>{ const m=e.data;
+      if(m.type==='load'){ this.src=m.data; this.on=false; this.cmds=[]; }
+      else if(m.type==='play'||m.type==='stop'){ this.cmds.push(m); this.cmds.sort((a,b)=>a.at-b.at); } }; }
+  start(m,t){ this.on=true; this.rate=m.rate||1; this.pos=m.pos*sampleRate; if(m.at<t) this.pos+=(t-m.at)*sampleRate*this.rate;
+    this.ola.fill(0); this.fh=this.ft=this.fc=0; this.fade=0; this.k=0; }
+  push(v){ this.fifo[this.ft]=v; this.ft=(this.ft+1)%this.fifo.length; this.fc++; }
+  frame(){ const s=this.src, N=this.N, H=this.H;
+    if(this.rate===1){ const p=Math.round(this.pos); for(let i=0;i<H;i++) this.push(p+i<s.length?s[p+i]:0); this.pos+=H; if(p>=s.length) this.on=false; return; }
+    const base=Math.round(this.pos), ov=N-H; let best=0;
+    if(this.k>0){ const r0=this.prevQ+H; let bc=-Infinity;
+      const corr=d=>{ const q=base+d; if(q<0||q+ov>s.length||r0+ov>s.length) return -Infinity; let c=0,e=0;
+        for(let i=0;i<ov;i+=2){ const x=s[q+i]; c+=x*s[r0+i]; e+=x*x; } return c/Math.sqrt(e+1e-9); };
+      for(let d=-this.T; d<=this.T; d+=8){ const c=corr(d); if(c>bc){ bc=c; best=d; } }
+      const b0=best; for(let d=b0-7; d<=b0+7; d++){ if(d===b0) continue; const c=corr(d); if(c>bc){ bc=c; best=d; } } }
+    const q=base+best, o=this.ola, w=this.win;
+    for(let i=0;i<N;i++){ const j=q+i; o[i]+=(j>=0&&j<s.length?s[j]:0)*w[i]; }
+    for(let i=0;i<H;i++) this.push(o[i]);
+    o.copyWithin(0,H); o.fill(0,N-H);
+    this.prevQ=q; this.pos+=H*this.rate; this.k++; if(q>=s.length) this.on=false; }
+  render(out,a,b){ for(let i=a;i<b;i++){ let v=0;
+      if(this.on){ if(this.fc===0) this.frame(); if(this.fc>0){ v=this.fifo[this.fh]; this.fh=(this.fh+1)%this.fifo.length; this.fc--; }
+        if(this.fade<256){ v*=this.fade/256; this.fade++; } }
+      out[i]=v; } }
+  process(inputs,outputs){ const out=outputs[0][0]; if(!out) return true;
+    const t0=currentTime, n=out.length, t1=t0+n/sampleRate; let i0=0;
+    while(this.cmds.length && this.cmds[0].at<t1){ const m=this.cmds.shift();
+      const off=Math.max(i0,Math.min(n,Math.round((m.at-t0)*sampleRate))); this.render(out,i0,off); i0=off;
+      if(m.type==='stop'||!this.src) this.on=false; else this.start(m,t0+off/sampleRate); }
+    this.render(out,i0,n); return true; }
+}
+registerProcessor('vox-stretch',VoxStretch);
+`;
+function voxWorklet(){                       /* 加载一次；失败就退回 BufferSource */
+  if(xWk) return xWk;
+  if(!acx || !acx.audioWorklet) return (xWk=Promise.resolve(false));
+  const url=URL.createObjectURL(new Blob([VOX_WORKLET],{type:'application/javascript'}));
+  xWk=acx.audioWorklet.addModule(url).then(()=>{
+    xNode=new AudioWorkletNode(acx,'vox-stretch',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[1]});
+    xNode.connect(voxBus()); return true;
+  }).catch(e=>{ xErr='worklet: '+String(e&&e.message||e); xNode=null; return false; });
+  return xWk;
+}
 function voxInfo(){ return (S&&S.vox&&S.vox.f)?S.vox:null; }
 function voxSpu0(){ const v=voxInfo(); return (v&&v.bpm) ? 60/(v.bpm*(v.grp||GRP)) : 60/(bpm*GRP); }
 function voxBus(){ if(xBus) return xBus; xBus=acx.createGain(); xBus.gain.value=VOL.vox; xBus.connect(acx.destination); return xBus; }
@@ -3670,18 +3723,24 @@ function voxLoad(){
   xLoading=fetch(url).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
     .then(ab=>new Promise((res,rej)=>{ let done=false; const ok=b=>{ if(!done){ done=true; res(b); } }, bad=e=>{ if(!done){ done=true; rej(e); } };
                                        const p=acx.decodeAudioData(ab,ok,bad); if(p&&p.then) p.then(ok,bad); }))   /* 旧 Safari 只认回调 */
-    .then(b=>{ if(xId===id) xBuf=b; return true; })
+    .then(b=>{ if(xId===id) xBuf=b; return voxWorklet().then(ok=>{
+        if(ok && xNode && xBuf && xId===id){ const d=new Float32Array(xBuf.getChannelData(0)); xNode.port.postMessage({type:'load',data:d},[d.buffer]); xWkId=id; }
+        return true; }); })
     .catch(e=>{ xErr=String(e&&e.message||e); say('人声音轨没能载入'); return false; })
     .finally(()=>{ xLoading=null; });
   return xLoading;
 }
 function voxKill(){
+  if(xNode && xOn){ xNode.port.postMessage({type:'stop', at:0}); } xOn=false;
   if(xSrc){ try{ xSrc.stop(0); }catch(e){} xSrc=null; }
   xOld.forEach(o=>{ try{ o.stop(0); }catch(e){} }); xOld=[];
 }
 function voxStart(when, u){                 /* 在音频时刻 when 从单位 u 起播 */
   if(!xBuf||!acx) return;
   const spu0=voxSpu0(), spu=60/(bpm*GRP), rate=spu0/spu;
+  if(xNode && xWkId===S.id){                   /* 变速不变调：worklet 自己按音频时钟起播 */
+    if(u*spu0>=xBuf.duration) return;
+    xNode.port.postMessage({type:'play', at:when, pos:u*spu0, rate}); xOn=true; xRate=rate; xT=when; xPos=u; xEnd=0; return; }
   let off=u*spu0; const now=acx.currentTime;
   if(when<now){ off+=(now-when)*rate; when=now; }   /* 锚点在过去（中途续播 / 刚载入）：从相应位置接上 */
   if(off>=xBuf.duration) return;
@@ -3695,9 +3754,10 @@ function voxAnchor(){
   voxStart(aT,aPos);
 }
 function voxSched(){                        /* 选段循环：到段尾前 1 秒把下一遍排上，老的那一段恰在段尾停 */
-  if(!VOX||!acx||!xSrc||!SEL||!(playing||armed)||xEnd) return;
+  if(!VOX||!acx||!(xSrc||xOn)||!SEL||!(playing||armed)||xEnd) return;
   if(xPos>=SEL.b-1e-6) return;
   const spu=60/(bpm*GRP), tb=xT+(SEL.b-xPos)*spu;
+  if(xOn){ if(tb<=acx.currentTime+1.0){ xNode.port.postMessage({type:'play', at:tb, pos:SEL.a*voxSpu0(), rate:xRate}); xT=tb; xPos=SEL.a; } return; }
   if(tb<=acx.currentTime+1.0){ const o=xSrc; try{ o.stop(tb); }catch(e){} xOld.push(o); xSrc=null; voxStart(tb, SEL.a);
     if(xOld.length>4) xOld.shift(); }
 }
@@ -4149,7 +4209,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playin
 window.__GS = {
   get song(){ return S; },
   get drum(){ return {on:DRM, hits:dHits, pend:dPend.length}; },
-  get vox(){ return {on:VOX, info:voxInfo(), loaded:!!xBuf, dur:xBuf&&xBuf.duration, src:!!xSrc, old:xOld.length, rate:xSrc&&xSrc.playbackRate.value, xT, xPos, xEnd, err:xErr, gain:xBus&&xBus.gain.value}; },
+  get vox(){ return {on:VOX, info:voxInfo(), loaded:!!xBuf, dur:xBuf&&xBuf.duration, src:!!xSrc||xOn, old:xOld.length, rate:xOn?xRate:(xSrc&&xSrc.playbackRate.value), mode:(xNode&&xWkId===(S&&S.id))?'worklet':'buffer', xT, xPos, xEnd, err:xErr, gain:xBus&&xBus.gain.value}; },
   get vol(){ return {v:VOL, snd:sBus&&sBus.gain.value, drum:dBus&&dBus.gain.value}; },
   shareUrl: () => shareUrl(),
   get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, leg:sLeg, rates:sVoice.map(v=>v?+v.playbackRate.value.toFixed(4):null), bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
