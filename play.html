@@ -3273,8 +3273,8 @@ function hush(){ pend.forEach(o=>{try{o.stop();}catch(e){}}); pend=[]; }
    选段绕回时各绕各的，不互相改对方的锚点。 */
 let sndErr='';
 let EV=[], en=-1, sT=0, sPos=0, sVoice=[null,null,null,null,null,null], sAll=[], sBus=null, sPan=[], sBuf={}, sNoise=null, sPlayed=0;
-const S_SR=24000, S_LEN=2.4, S_MAX=24, S_LIVE=12;   /* 缓冲 24kHz × 2.4s（约 230KB 一个）、最多缓存 24 个、同时在响的音源最多 12 个：
-                                                        手机上皮肤动画已经把 CPU 顶到很高，试听必须尽量省（iOS 对耗能过高的页面会强制重载） */
+const S_LEN=3.0, S_MAX=32, S_LIVE=16;          /* 缓冲 3s（上下文采样率）、最多缓存 32 个、同时在响的音源最多 16 个。
+                                                   排查手机崩溃时曾砍到 24kHz/无混响/无声像，用户说「没那么好听了」；元凶其实是皮肤特效（见 FALL），音频全部恢复 */
 const S_MIDI=[64,59,55,50,45,40];          /* 六线谱从上到下：一弦 e4 … 六弦 E2 */
 const isdig=v=>/^\d+$/.test(String(v));
 function sndCapo(){ const m=/\d+/.exec(String((S&&S.score&&S.score.meta&&S.score.meta.capo)||'')); return m?Math.min(12,+m[0]):0; }
@@ -3351,14 +3351,25 @@ function sndSched(){
 }
 function sndBusGet(){
   if(sBus) return sBus;
-  /* 图最省：总线一个增益 → 一个 tanh 软限幅（扫六根弦叠起来不破音）→ 输出。
-     原先每个音各建声像节点、总线挂压缩器和卷积混响——手机上皮肤动画 + 这些一起跑，iOS 播到一半把整页杀了 */
-  sBus=acx.createGain(); sBus.gain.value=0.55;
-  let out=acx.destination;
-  try{ const ws=acx.createWaveShaper(), n=1024, c=new Float32Array(n);
-       for(let i=0;i<n;i++){ const x=(i/(n-1))*2-1; c[i]=Math.tanh(1.6*x)/Math.tanh(1.6); }
-       ws.curve=c; ws.connect(acx.destination); out=ws; }catch(e){}
-  sBus.connect(out); sPan=[];
+  /* 总线：增益 → 压缩器（扫六根弦叠起来不破音）→ 输出；并联一段 0.5 秒合成脉冲响应当琴箱余响；
+     每根弦一个固定声像节点（一弦偏右、六弦偏左），每个音只建「源 + 增益」两个节点。整套实测只占 2～3% CPU */
+  const comp=acx.createDynamicsCompressor();
+  comp.threshold.value=-16; comp.ratio.value=4; comp.attack.value=0.003; comp.release.value=0.12;
+  comp.connect(acx.destination);
+  sBus=acx.createGain(); sBus.gain.value=0.75; sBus.connect(comp);
+  try{
+    const sr=acx.sampleRate, N=Math.floor(sr*0.5), ir=acx.createBuffer(2,N,sr);
+    for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0;
+      for(let i=0;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-i/(sr*0.11)); lp+=0.25*(w-lp); d[i]=lp; } }
+    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.22;
+    sBus.connect(cv); cv.connect(wg); wg.connect(comp);
+  }catch(e){}
+  sPan=[];
+  for(let s=0;s<6;s++){
+    let n=sBus;
+    if(acx.createStereoPanner){ try{ n=acx.createStereoPanner(); n.pan.value=0.3-s*0.12; n.connect(sBus); }catch(e){ n=sBus; } }
+    sPan.push(n);
+  }
   return sBus;
 }
 /* Karplus-Strong：噪声激励一个周期 → 延迟线 + 两点平均（高频衰得快，低音弦余音长）；
@@ -3366,7 +3377,7 @@ function sndBusGet(){
 function sndBuf(midi, vel){
   const br=vel>0.9?2:(vel<0.65?0:1), key=midi+'/'+br;
   if(sBuf[key]) return sBuf[key];
-  const sr=S_SR, f=440*Math.pow(2,(midi-69)/12), P=sr/f-0.5;
+  const sr=acx.sampleRate, f=440*Math.pow(2,(midi-69)/12), P=sr/f-0.5;
   const Pi=Math.floor(P), fr=P-Pi, N=Math.floor(sr*S_LEN), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0);
   const hl = f<120 ? 0.85 : f<250 ? 0.7 : 0.5;    /* 幅度半衰期（秒） */
   const g=Math.pow(0.5, 1/(hl*sr)), k=[0.3,0.5,0.75][br];
@@ -3383,7 +3394,7 @@ function sndBuf(midi, vel){
 }
 function sndNoiseBuf(){
   if(sNoise) return sNoise;
-  const sr=S_SR, N=Math.floor(sr*0.07), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0); let lp=0;
+  const sr=acx.sampleRate, N=Math.floor(sr*0.07), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0); let lp=0;
   for(let i=0;i<N;i++){ lp+=0.35*((Math.random()*2-1)-lp); y[i]=lp*Math.exp(-i/(sr*0.012))*0.9; }
   sNoise=buf; return buf;
 }
@@ -3403,7 +3414,7 @@ function sndPlay(e,t){
   const src=acx.createBufferSource(), g=acx.createGain();
   src.buffer = e.fret==null ? sndNoiseBuf() : sndBuf(S_MIDI[e.s]+e.fret+sndCapo(), e.vel);
   g.gain.value=Math.min(1.2, e.vel*(e.fret==null?0.5:1)*(0.86+0.028*(5-e.s)));
-  src.connect(g); g.connect(sBus);
+  src.connect(g); g.connect(sPan[e.s]||sBus);
   src._t0=t; src._g=g; src._s=e.s;
   src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
   src.start(t); sVoice[e.s]=src; sAll.push(src); sPlayed++;
