@@ -3915,7 +3915,9 @@ function voxFetch(){                       /* 只取字节（不要 AudioContext
   if(xBytes && xBytesId===S.id) return Promise.resolve(xBytes);
   if(xFetching && xBytesId===S.id) return xFetching;
   const vm=/[?&]v=([0-9a-f]+)/.exec(location.search);
-  const url='songs/'+S.id+'/'+v.f+(vm?'?v='+vm[1]:''), id=S.id;
+  /* v.h = 音轨内容指纹（vox_install 写进 song.json）：重渲后网址跟着变，不会播缓存里的旧人声 */
+  const q=v.h ? '?h='+v.h : (vm?'?v='+vm[1]:'');
+  const url='songs/'+S.id+'/'+v.f+q, id=S.id;
   xBytesId=id; xBytes=null;
   xFetching=fetch(url).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
     .then(ab=>{ if(xBytesId===id) xBytes=ab; return ab; })
