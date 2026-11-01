@@ -1154,7 +1154,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API;
       for(var vk in pack){
         var dv=pack[vk];
         if(dv && dv.score){
-          try{ var vr=window.VecRender.toSong(dv); vr.song.score=dv.score; vr.song.vox=(dv.vox&&dv.files&&dv.files.vox)?Object.assign({f:dv.files.vox},dv.vox):null; pack[vk]=vr.song; for(var ik in vr.imgs) IMG[ik]=vr.imgs[ik]; }   /* score 留在 song 上：试听按它发声 */
+          /* 谱面编辑器（editor.js）的改动存在本机 gs.edit.<id>：这不是缓存，是用户自己改的谱，盖在文件那份上面 */
+          var edited=false;
+          try{ var ej=localStorage.getItem('gs.edit.'+vk); if(ej){ var eo=JSON.parse(ej); if(eo&&eo.score){ dv=Object.assign({},dv,{score:eo.score}); edited=true; } } }catch(e){}
+          try{ var vr=window.VecRender.toSong(dv); if(edited) vr.song.edited=true; vr.song.score=dv.score; vr.song.vox=(dv.vox&&dv.files&&dv.files.vox)?Object.assign({f:dv.files.vox},dv.vox):null; pack[vk]=vr.song; for(var ik in vr.imgs) IMG[ik]=vr.imgs[ik]; }   /* score 留在 song 上：试听按它发声 */
           catch(e){ delete pack[vk]; window.__LOADERR='谱面渲染出错：'+(e&&e.message||e); }
         }
       }
@@ -1177,6 +1180,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API;
 
   window.__OFFLINE=true;
   window.__BLOB=function(id){ return IMG[id]||''; };
+  window.__SETIMG=function(id,url){ IMG[id]=url; };   /* 谱面编辑器重画后换图（不落 localStorage，改动另存 gs.edit.<id>） */
   /* 只统计真正写进 localStorage 的部分。随文件带来的内置曲目不占配额，
      早先把它们也算进去，会报出一个根本不存在的「快满了」。 */
   window.__USAGE=function(){
@@ -1616,7 +1620,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
    弹性就是这么来的；越过的幅度只有几像素，不会露馅。 */
 #bar,#dock{transition:margin var(--leanT,1s) cubic-bezier(.34,1.56,.64,1)}
 #app.lean #bar,#app.lean #dock{transition-timing-function:cubic-bezier(.36,0,.66,-.56)}
-#app.lean #bar{margin-top:calc(-1 * var(--barH,46px));pointer-events:none}
+/* 顶部歌名栏不收（用户 2026-11-01），只收底部工具栏 */
 #app.lean #dock{margin-bottom:calc(-1 * var(--dockH,120px));pointer-events:none}
 @media (prefers-reduced-motion:reduce){ #bar,#dock{transition:none} }
 #seek{position:relative;height:20px;cursor:pointer;touch-action:none}
@@ -1634,8 +1638,8 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
 #readout b{color:var(--ink);font-size:17px;font-weight:700}
 #beat{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:13px;font-weight:700;color:var(--accent)}
 #where{font-family:var(--cjk);font-size:12px;font-weight:500;color:var(--cue)}
-#spdwrap,#simwrap{position:relative;flex:0 0 auto}
-#spdpop,#simpop{width:auto;padding:10px 10px 8px}
+#spdwrap,#simwrap,#capowrap{position:relative;flex:0 0 auto}
+#spdpop,#simpop,#capopop{width:auto;padding:10px 10px 8px}
 .pop .row{display:flex;gap:10px;align-items:stretch}   /* 两列等高：左列的音量杆撑满，底下的「音量」和右列的「慢」齐 */
 .pop .sl.grow{flex:1 1 auto;height:auto;min-height:104px}
 .pop .col{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:64px}
@@ -1645,37 +1649,37 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
 .pop .sl.short{height:104px}
 .pop .nm{font-family:var(--cjk);font-size:11px;color:var(--ink);letter-spacing:0;margin-top:2px}
 #rst svg{display:block}
-#spdpop.pop,#simpop.pop{width:auto}   /* 压过上面 #spdpop 的 96px 定宽（那是单根 BPM 滑块时代的），不然左列按钮会探出面板 */
-#spdpop,#simpop{position:absolute;bottom:calc(100% + 9px);left:50%;transform:translateX(-50%);z-index:9;width:96px;
+#spdpop.pop,#simpop.pop,#capopop.pop{width:auto}   /* 压过上面 #spdpop 的 96px 定宽（那是单根 BPM 滑块时代的），不然左列按钮会探出面板 */
+#spdpop,#simpop,#capopop{position:absolute;bottom:calc(100% + 9px);left:50%;transform:translateX(-50%);z-index:9;width:96px;
         background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);
         padding:11px 9px 9px;display:flex;flex-direction:column;align-items:center;gap:6px}
-#spdpop .hd,#simpop .hd{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:22px;font-weight:700;line-height:1;color:var(--ink)}
-#spdpop .unit,#simpop .unit{font-size:11px;color:var(--muted);margin-top:-3px}
-#spdpop .sub,#simpop .sub{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted)}
-#spdpop .pv,#simpop .pv{font-family:var(--num);font-size:11px;font-weight:700;color:var(--muted)}
-#spdpop .sl,#simpop .sl{position:relative;height:156px;width:44px}
+#spdpop .hd,#simpop .hd,#capopop .hd{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:22px;font-weight:700;line-height:1;color:var(--ink)}
+#spdpop .unit,#simpop .unit,#capopop .unit{font-size:11px;color:var(--muted);margin-top:-3px}
+#spdpop .sub,#simpop .sub,#capopop .sub{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted)}
+#spdpop .pv,#simpop .pv,#capopop .pv{font-family:var(--num);font-size:11px;font-weight:700;color:var(--muted)}
+#spdpop .sl,#simpop .sl,#capopop .sl{position:relative;height:156px;width:44px}
 #simpop .col.tg.off{opacity:.38;filter:saturate(.2)}   /* 这首没有的音轨：整列置灰，按钮和滑杆都 disabled（用户 2026-11-01：只剩一根杆不好看） */
 #simpop .col.tg.off .sm,#simpop .col.tg.off input[type=range]{cursor:not-allowed}
 /* BPM 滑块：自绘。原生的是个小圆点，手指/鼠标都不好抓（用户要方形）。
    整条是转了 -90° 的横向 range，所以「宽」= 竖直方向的长度。滑块 30×22（转过来是 30 宽、22 高）的圆角方块，
    中间三道横纹当握把；轨道 8px，走过的部分用主题色填（--p 由 setBpm 写） */
-#spdpop input[type=range],#simpop input[type=range]{position:absolute;left:50%;top:50%;width:150px;height:34px;margin:0;padding:0;
+#spdpop input[type=range],#simpop input[type=range],#capopop input[type=range]{position:absolute;left:50%;top:50%;width:150px;height:34px;margin:0;padding:0;
       -webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;touch-action:none;
       transform:translate(-50%,-50%) rotate(-90deg)}
-#spdpop input[type=range]::-webkit-slider-runnable-track,#simpop input[type=range]::-webkit-slider-runnable-track{height:8px;border-radius:4px;
+#spdpop input[type=range]::-webkit-slider-runnable-track,#simpop input[type=range]::-webkit-slider-runnable-track,#capopop input[type=range]::-webkit-slider-runnable-track{height:8px;border-radius:4px;
       background:linear-gradient(90deg,var(--accent) var(--p,25%),var(--rail) var(--p,25%))}
-#spdpop input[type=range]::-moz-range-track,#simpop input[type=range]::-moz-range-track{height:8px;border-radius:4px;background:var(--rail)}
-#spdpop input[type=range]::-moz-range-progress,#simpop input[type=range]::-moz-range-progress{height:8px;border-radius:4px;background:var(--accent)}
-#spdpop input[type=range]::-webkit-slider-thumb,#simpop input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:30px;margin-top:-11px;
+#spdpop input[type=range]::-moz-range-track,#simpop input[type=range]::-moz-range-track,#capopop input[type=range]::-moz-range-track{height:8px;border-radius:4px;background:var(--rail)}
+#spdpop input[type=range]::-moz-range-progress,#simpop input[type=range]::-moz-range-progress,#capopop input[type=range]::-moz-range-progress{height:8px;border-radius:4px;background:var(--accent)}
+#spdpop input[type=range]::-webkit-slider-thumb,#simpop input[type=range]::-webkit-slider-thumb,#capopop input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:30px;margin-top:-11px;
       border-radius:6px;border:1px solid color-mix(in srgb,var(--accent) 70%,#000);
       background:repeating-linear-gradient(90deg,transparent 0 6px,rgba(255,255,255,.55) 6px 7.5px) 4px 7px/14px 16px no-repeat,var(--accent);
       box-shadow:0 1px 4px rgba(0,0,0,.28)}
-#spdpop input[type=range]::-moz-range-thumb,#simpop input[type=range]::-moz-range-thumb{width:22px;height:30px;border-radius:6px;box-sizing:border-box;
+#spdpop input[type=range]::-moz-range-thumb,#simpop input[type=range]::-moz-range-thumb,#capopop input[type=range]::-moz-range-thumb{width:22px;height:30px;border-radius:6px;box-sizing:border-box;
       border:1px solid color-mix(in srgb,var(--accent) 70%,#000);
       background:repeating-linear-gradient(90deg,transparent 0 6px,rgba(255,255,255,.55) 6px 7.5px) 4px 7px/14px 16px no-repeat,var(--accent);
       box-shadow:0 1px 4px rgba(0,0,0,.28)}
-#spdpop input[type=range]:focus-visible,#simpop input[type=range]:focus-visible{outline:none}
-#spdpop input[type=range]:focus-visible::-webkit-slider-thumb,#simpop input[type=range]:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
+#spdpop input[type=range]:focus-visible,#simpop input[type=range]:focus-visible,#capopop input[type=range]:focus-visible{outline:none}
+#spdpop input[type=range]:focus-visible::-webkit-slider-thumb,#simpop input[type=range]:focus-visible::-webkit-slider-thumb,#capopop input[type=range]:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
 #count{position:absolute;inset:0;display:grid;place-items:center;z-index:7;pointer-events:none;background:var(--scrim)}
 #count span{font-family:var(--num);font-size:clamp(72px,22vw,170px);font-weight:700;color:var(--accent);
             font-variant-numeric:tabular-nums;line-height:1}
@@ -1785,10 +1789,10 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
       <div id="ctrl">
         <button class="sm" id="rst" title="从头（r）"><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M1 1h2.3v13H1zM14 1.3 4.6 7.5 14 13.7Z" fill="currentColor"/></svg></button>
         <button id="play" title="开始 / 停住"><svg id="pico" width="15" height="17" viewBox="0 0 15 17" aria-hidden="true"><path d="M1 1.2 14 8.5 1 15.8Z" fill="currentColor"/></svg></button>
-        <div id="readout">剩 <b id="rem">0:00</b> <span id="beat">♩1/4</span> <span id="where"></span></div>
+        <div id="readout">剩 <b id="rem">0:00</b> <span id="beat" hidden>♩1/4</span> <span id="where" hidden></span></div>   <!-- 拍位、段落文字藏起来（用户 2026-11-01：底栏只留剩余时间） -->
         <button class="sm cjk" id="selX" hidden title="取消选段循环（也可右键 / Esc）">✕ 循环</button>
         <div id="spdwrap" class="pwrap">
-          <button class="sm cjk" id="spd" aria-expanded="false" aria-pressed="false" title="节拍器：开关、半拍、速度、音量">节拍器 <b id="durv">68</b></button>
+          <button class="sm cjk" id="spd" aria-expanded="false" aria-pressed="false" title="节拍器：开关、半拍、速度、音量">节拍器<b id="durv" hidden>68</b></button>
           <div id="spdpop" class="pop" hidden><div class="row">
             <div class="col tg">
               <button class="sm cjk" id="met" aria-pressed="false" title="节拍器开关（m）">节拍器</button>
@@ -1825,9 +1829,22 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
             </div>
           </div></div>
         </div>
+        <div id="capowrap" class="pwrap">
+          <button class="sm cjk" id="capo" aria-expanded="false" aria-pressed="false" title="变调夹：模拟夹在第几品——吉他和人声一起跟着升降（谱上标的品位是默认）">变调夹</button>
+          <div id="capopop" class="pop" hidden><div class="row">
+            <div class="col">
+              <span class="hd" id="capov">0</span><span class="unit">品</span>
+              <span class="sub" id="capot"></span><span class="pv">高</span>
+              <div class="sl"><input type="range" id="capoi" min="0" max="7" step="1" value="0" aria-label="变调夹品位"></div>
+              <span class="pv">低</span>
+            </div>
+            <div class="col tg">
+              <button class="sm cjk" id="capoRst" title="回到谱上标的变调夹">按谱</button>
+              <span class="nm" id="capod">&nbsp;</span>
+            </div>
+          </div></div>
+        </div>
         <button class="sm cjk" id="mode" aria-pressed="false">跑马灯</button>
-        <button class="sm" id="prev">⟨</button>
-        <button class="sm" id="next">⟩</button>
       </div>
     </div>
   </section>
@@ -2097,7 +2114,7 @@ function ordDialog(){
   ORD=ids; ordWrite(); applyOrd(); renderLib();
   alert('顺序已套用（'+ids.length+' 首）。');
 }
-function open_(s){ S=s;
+function open_(s){ S=s; capoLoad();
   /* 顶栏只放歌名。拍号底部那排已经有了（「♩4/4」），顶上再挂一个是重复。 */
   $('songname').textContent=s.title||'';
 }
@@ -3309,8 +3326,15 @@ function frame(t){
   if(!last) last=t;
   /* 一帧最多算 0.25 秒：原来是 0.05，页面一卡（iPad 滚动时常见）超出的时间就丢了，游标从此落后节拍器（实测 50~100ms）。
      0.25 仍然挡得住「切走标签页再回来」那种几秒的大跳 */
-  const dt=Math.min(.25,(t-last)/1000); last=t;
+  const gap=(t-last)/1000; last=t;
+  let dt=Math.min(.25,gap);
   if(!drag) pos+=bpm*GRP/60*dt;
+  /* 切到别的窗口再回来（用户 2026-11-01：背景音一直在放，小球不走，回来就不同步）：
+     后台里 rAF 停了、音频没停。只要音频在跑，就按音频时钟（锚点 aT/aPos）把 pos 对回去，选段循环按段长绕 */
+  if(gap>.3 && !drag && acx && acx.state==='running' && (metro||SND||DRM||VOX)){
+    let p=aPos+(acx.currentTime-aT)*bpm*GRP/60;
+    if(SEL && p>=SEL.b && SEL.b>SEL.a){ p=SEL.a+((p-SEL.b)%(SEL.b-SEL.a)); }
+    if(p>=0 && p<=TOT+1e-6) pos=p; }
   /* 选段循环：走到选段尾就绕回段首（多走的那一点带过去，不丢拍）。
      不调 anchor()：节拍器的格子 sched() 已经同样绕过去了，重新对齐反而会抖一下 */
   if(SEL && !drag && pos>=SEL.b && pos<SEL.b+2){ pos=SEL.a+(pos-SEL.b);
@@ -3351,7 +3375,27 @@ const S_LEN=3.0, S_MAX=32, S_LIVE=16;          /* 缓冲 3s（上下文采样率
                                                    排查手机崩溃时曾砍到 24kHz/无混响/无声像，用户说「没那么好听了」；元凶其实是皮肤特效（见 FALL），音频全部恢复 */
 const S_MIDI=[64,59,55,50,45,40];          /* 六线谱从上到下：一弦 e4 … 六弦 E2 */
 const isdig=v=>/^\d+$/.test(String(v));
-function sndCapo(){ const m=/\d+/.exec(String((S&&S.score&&S.score.meta&&S.score.meta.capo)||'')); return m?Math.min(12,+m[0]):0; }
+function capoMeta(){ const m=/\d+/.exec(String((S&&S.score&&S.score.meta&&S.score.meta.capo)||'')); return m?Math.min(12,+m[0]):0; }
+/* 变调夹按钮（用户 2026-11-01：「模拟夹变调夹之后继续变调，包括人声」）：CAPO=null 按谱上标的，否则按用户夹的品位；
+   吉他按谱发声直接加到 MIDI 上，人声按「夹的 − 谱上的」半音数在 worklet 里变调（变速不变调那套之上再做重采样） */
+let CAPO=null;
+function sndCapo(){ return CAPO!=null ? CAPO : capoMeta(); }
+function voxPitch(){ return Math.pow(2,(sndCapo()-capoMeta())/12); }
+function capoLoad(){ const v=S?lsg('capo.'+S.id):null; CAPO=(v!=null && v!=='' && isFinite(+v)) ? Math.max(0,Math.min(7,+v)) : null; capoPaint(); }
+function setCapo(v){
+  CAPO=(v==null || +v===capoMeta()) ? null : Math.max(0,Math.min(7,Math.round(+v)));
+  if(S) lss('capo.'+S.id, CAPO==null?'':String(CAPO));
+  capoPaint();
+  if(acx && (playing||armed)) anchor();      /* 播放中：吉他从下一个音起、人声立刻按新调接上 */
+}
+function capoPaint(){
+  const b=$('capo'); if(!b) return;
+  const c=sndCapo(), m=capoMeta(), d=c-m;
+  b.textContent='变调夹'+(CAPO!=null?' '+c:''); b.setAttribute('aria-pressed',String(CAPO!=null));
+  $('capov').textContent=c; const i=$('capoi'); i.value=c; i.style.setProperty('--p',((c-i.min)/(i.max-i.min)*100)+'%');
+  $('capot').textContent='谱上 '+m+' 品';
+  $('capod').textContent= d===0 ? '\u00a0' : (d>0?'升 '+d+' 半音':'降 '+(-d)+' 半音');
+}
 /* 事件表：{u 单位时刻, uo 单位内偏移(占时值比例), dts 秒偏移, s 弦, fret 品(null=闷音), vel 力度} 或 {u, mute:true}（休止：全收） */
 function sndBuild(){
   EV=[]; en=-1; sPlayed=0;
@@ -3674,14 +3718,15 @@ function setDrm(on){
    精度到样本；没有 AudioWorklet 或 blob 模块不让加载时退回 BufferSource。 */
 const VOX_WORKLET = `
 class VoxStretch extends AudioWorkletProcessor{
-  constructor(){ super(); this.src=null; this.cmds=[]; this.on=false; this.pos=0; this.rate=1; this.k=0; this.prevQ=0; this.fade=0;
+  constructor(){ super(); this.src=null; this.cmds=[]; this.on=false; this.pos=0; this.rate=1; this.p=1; this.frac=0; this.k=0; this.prevQ=0; this.fade=0;
     this.N=2048; this.H=512; this.T=320; this.win=new Float32Array(this.N);
     for(let i=0;i<this.N;i++) this.win[i]=0.5-0.5*Math.cos(2*Math.PI*i/this.N);
     this.ola=new Float32Array(this.N); this.fifo=new Float32Array(this.N*4); this.fh=0; this.ft=0; this.fc=0;
     this.port.onmessage=e=>{ const m=e.data;
       if(m.type==='load'){ this.src=m.data; this.on=false; this.cmds=[]; }
       else if(m.type==='play'||m.type==='stop'){ this.cmds.push(m); this.cmds.sort((a,b)=>a.at-b.at); } }; }
-  start(m,t){ this.on=true; this.rate=m.rate||1; this.pos=m.pos*sampleRate; if(m.at<t) this.pos+=(t-m.at)*sampleRate*this.rate;
+  /* pitch：变调夹——WSOLA 按 rate/p 伸缩，再按 p 重采样读出：节奏仍是 rate，音高乘 p */
+  start(m,t){ this.on=true; const r=m.rate||1; this.p=m.pitch||1; this.rate=r/this.p; this.frac=0; this.pos=m.pos*sampleRate; if(m.at<t) this.pos+=(t-m.at)*sampleRate*r;
     this.ola.fill(0); this.fh=this.ft=this.fc=0; this.fade=0; this.k=0; }
   push(v){ this.fifo[this.ft]=v; this.ft=(this.ft+1)%this.fifo.length; this.fc++; }
   frame(){ const s=this.src, N=this.N, H=this.H;
@@ -3698,7 +3743,9 @@ class VoxStretch extends AudioWorkletProcessor{
     o.copyWithin(0,H); o.fill(0,N-H);
     this.prevQ=q; this.pos+=H*this.rate; this.k++; if(q>=s.length) this.on=false; }
   render(out,a,b){ for(let i=a;i<b;i++){ let v=0;
-      if(this.on){ if(this.fc===0) this.frame(); if(this.fc>0){ v=this.fifo[this.fh]; this.fh=(this.fh+1)%this.fifo.length; this.fc--; }
+      if(this.on){ while(this.fc<2 && this.on) this.frame();
+        if(this.fc>=2){ const L=this.fifo.length, h=this.fh; v=this.fifo[h]*(1-this.frac)+this.fifo[(h+1)%L]*this.frac;
+          this.frac+=this.p; while(this.frac>=1 && this.fc>0){ this.fh=(this.fh+1)%L; this.fc--; this.frac-=1; } }
         if(this.fade<256){ v*=this.fade/256; this.fade++; } }
       out[i]=v; } }
   process(inputs,outputs){ const out=outputs[0][0]; if(!out) return true;
@@ -3768,11 +3815,11 @@ function voxStart(when, u){                 /* 在音频时刻 when 从单位 u 
   const spu0=voxSpu0(), spu=60/(bpm*GRP), rate=spu0/spu;
   if(xNode && xWkId===S.id){                   /* 变速不变调：worklet 自己按音频时钟起播 */
     if(u*spu0>=xBuf.duration){ xEnd=1; return; }
-    xNode.port.postMessage({type:'play', at:when, pos:u*spu0, rate}); xOn=true; xRate=rate; xT=when; xPos=u; xEnd=0; return; }
+    xNode.port.postMessage({type:'play', at:when, pos:u*spu0, rate, pitch:voxPitch()}); xOn=true; xRate=rate; xT=when; xPos=u; xEnd=0; return; }
   let off=u*spu0; const now=acx.currentTime;
   if(when<now){ off+=(now-when)*rate; when=now; }   /* 锚点在过去（中途续播 / 刚载入）：从相应位置接上 */
   if(off>=xBuf.duration){ xEnd=1; return; }
-  const s=acx.createBufferSource(); s.buffer=xBuf; s.playbackRate.value=rate; s.connect(voxBus());
+  const s=acx.createBufferSource(); s.buffer=xBuf; s.playbackRate.value=rate*voxPitch(); s.connect(voxBus());
   s.start(when, off); xSrc=s; xT=when; xPos=u; xEnd=0;
 }
 function voxAnchor(){
@@ -3793,7 +3840,7 @@ function voxSched(){                        /* 选段循环：到段尾前 1 秒
   if(!VOX||!acx||!(xSrc||xOn)||!SEL||!(playing||armed)||xEnd) return;
   if(xPos>=SEL.b-1e-6) return;
   const spu=60/(bpm*GRP), tb=xT+(SEL.b-xPos)*spu;
-  if(xOn){ if(tb<=acx.currentTime+1.0){ xNode.port.postMessage({type:'play', at:tb, pos:SEL.a*voxSpu0(), rate:xRate}); xT=tb; xPos=SEL.a; } return; }
+  if(xOn){ if(tb<=acx.currentTime+1.0){ xNode.port.postMessage({type:'play', at:tb, pos:SEL.a*voxSpu0(), rate:xRate, pitch:voxPitch()}); xT=tb; xPos=SEL.a; } return; }
   if(tb<=acx.currentTime+1.0){ const o=xSrc; try{ o.stop(tb); }catch(e){} xOld.push(o); xSrc=null; voxStart(tb, SEL.a);
     if(xOld.length>4) xOld.shift(); }
 }
@@ -3958,7 +4005,7 @@ addEventListener('pointermove',e=>{
   const r=getComputedStyle(document.documentElement);
   const top=(parseFloat(r.getPropertyValue('--barH'))||46)+24,
         bot=(parseFloat(r.getPropertyValue('--dockH'))||120)+24;
-  const near = e.clientY<top || e.clientY>innerHeight-bot;
+  const near = e.clientY>innerHeight-bot;      /* 顶栏不收了，只认下沿 */
   if(near){ if(!nearChrome || $('app').classList.contains('lean')){ nearChrome=true; clearTimeout(tid); lean(false); } }
   else if(nearChrome){ nearChrome=false; idle(); }
 },{passive:true});
@@ -4014,8 +4061,6 @@ function setMode(on){
 }
 
 $('play').onclick=e=>{ e.stopPropagation(); toggle(); };
-$('prev').onclick=e=>{ e.stopPropagation(); prevRow(); };
-$('next').onclick=e=>{ e.stopPropagation(); rowTo(at(pos).i+1); };
 $('rst').onclick =e=>{ e.stopPropagation(); P.stop(); seek(0); };
 $('met').onclick =e=>{ e.stopPropagation(); setMetro(!metro); };
 $('snd').onclick =e=>{ e.stopPropagation(); setSnd(!SND, true); };
@@ -4034,9 +4079,13 @@ function placePop(pop){ pop.style.transform=''; if(pop.hidden) return;
 $('spd').onclick =e=>{ e.stopPropagation(); spdpop.hidden=!spdpop.hidden;
   $('spd').setAttribute('aria-expanded',String(!spdpop.hidden)); if(!spdpop.hidden){ clearTimeout(tid); lean(false); } else idle(); placePop(spdpop); };
 spdpop.onclick=e=>e.stopPropagation();
-const simpop=$('simpop');
+const simpop=$('simpop'), capopop=$('capopop');
 $('sim').onclick =e=>{ e.stopPropagation(); simpop.hidden=!simpop.hidden; $('sim').setAttribute('aria-expanded',String(!simpop.hidden)); if(!simpop.hidden){ clearTimeout(tid); lean(false); } else idle(); volPaint(); placePop(simpop); };
 simpop.onclick=e=>e.stopPropagation();
+$('capo').onclick=e=>{ e.stopPropagation(); capopop.hidden=!capopop.hidden; $('capo').setAttribute('aria-expanded',String(!capopop.hidden)); if(!capopop.hidden){ clearTimeout(tid); lean(false); } else idle(); capoPaint(); placePop(capopop); };
+capopop.onclick=e=>e.stopPropagation();
+$('capoi').oninput=()=>setCapo(+$('capoi').value);
+$('capoRst').onclick=()=>setCapo(null);
 document.querySelectorAll('.pop input[data-k]').forEach(i=>{ i.oninput=()=>setVol(i.dataset.k, +i.value/100); });
 volPaint();
 /* 面板外层按钮亮起 = 里面有开着的 */
@@ -4044,12 +4093,12 @@ function panelLights(){ $('spd').setAttribute('aria-pressed',String(metro)); $('
 spv.oninput=()=>setBpm(+spv.value);
 /* 二级面板（节拍器 / 模拟演奏）：点面板和按钮以外的地方就关掉，关的那一下吞掉，不当「点谱面 = 播放」（用户 2026-10-31） */
 let popEat=false;
-function popsOpen(){ return !spdpop.hidden || !simpop.hidden; }
+function popsOpen(){ return !spdpop.hidden || !simpop.hidden || !capopop.hidden; }
 function closePops(){ let did=false;
-  for(const [pop,btn] of [[spdpop,'spd'],[simpop,'sim']]) if(!pop.hidden){ pop.hidden=true; $(btn).setAttribute('aria-expanded','false'); did=true; }
+  for(const [pop,btn] of [[spdpop,'spd'],[simpop,'sim'],[capopop,'capo']]) if(!pop.hidden){ pop.hidden=true; $(btn).setAttribute('aria-expanded','false'); did=true; }
   if(did) idle(); return did; }
 addEventListener('pointerdown',e=>{ popEat=false;
-  for(const [pop,btn] of [[spdpop,'spd'],[simpop,'sim']])
+  for(const [pop,btn] of [[spdpop,'spd'],[simpop,'sim'],[capopop,'capo']])
     if(!pop.hidden && !pop.contains(e.target) && !$(btn).contains(e.target)){ pop.hidden=true; $(btn).setAttribute('aria-expanded','false'); popEat=true; }
   if(popEat) idle(); },true);
 
@@ -4081,7 +4130,7 @@ function barHits(e){
          一行被房子拆成两段演奏项时，段与段之间要按小节线分，不能互相吞 */
       const nr=(S.rows[m.sr]||{bb:[]}).bb.length;
       const x0=(k===0 && m.b0===0)?-1e9:m.gx[o], x1=(k===m.bars.length-1 && m.b1>=nr)?1e9:m.gx[o+n];
-      if(xp>=x0 && xp<x1) hits.push({a:CUM[i]+o, b:CUM[i]+o+n});
+      if(xp>=x0 && xp<x1) hits.push({a:CUM[i]+o, b:CUM[i]+o+n, sr:m.sr, bi:m.b0+k, row:ri});
       o+=n; }); });
   return hits;
 }
@@ -4273,7 +4322,11 @@ window.__GS = {
   ordApply: c => { const ids=ordFromCode(c); if(!ids) return false;
                    ORD=ids; ordWrite(); applyOrd(); renderLib(); return true; },
   seek: u => { seek(u); },
-  follow: () => follow(null)
+  follow: () => follow(null),
+  /* 谱面编辑器（editor.js，挂在 </body> 前）要摸的内部件：只给它，别的别用 */
+  ed: { get S(){ return S; }, get PL(){ return PL; }, get prows(){ return prows; }, get psts(){ return psts; }, paper, stage,
+        get TOT(){ return TOT; }, get pos(){ return pos; }, get playing(){ return playing; }, VEC, VBOX,
+        open_: s=>open_(s), buildPlay: ()=>buildPlay(), seek: u=>seek(u), stop: ()=>P.stop(), say: t=>say(t), barHits: e=>barHits(e) }
 };
 
 /* 目录页跳过来的（?lib=1）：露出返回键，并且把「曲库」页签也改成回目录——
@@ -4514,5 +4567,330 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
   };
 })();
 /* SHEET-END */
+</script>
+<script>
+/* VectorTAB 谱面编辑器（2026-11-01，用户：「做一个吉他谱编辑器，可以编辑当前的矢量谱，自己加小节、编辑和弦、简谱、歌词，能保存」）
+   原则：只改语义谱 S.score（score.json），改完让 VecRender 当场重画、buildPlay 重排，和打开时同一条管线——所见即数据。
+   保存：本机 localStorage（gs.edit.<id>），开谱时文件那份先来、本机改过的盖上去（和「文件永远赢」的缓存规则相反：这是用户的改动，不是缓存）；
+   「导出」把 score.json 下载下来，放回站点用 sitectl add-score --id 重出。
+   小节内容用一行文本写，照简谱的写法：
+     简谱  1 2 3 5   每个音一个词：数字 0~7（0 休止）、- 延音、' 高八度 , 低八度、. 附点、/ 一条减时线（// 两条）、#/b 升降、[4]5 倚音、(1 2 3) 三连音
+     和弦  C 或 C G（两个平分一小节）或 C@0 G@1.5（@ 后是落在第几拍）
+     歌词  一字一音，_ 占位（这个音不唱字），延音「-」不占位 */
+(function (G) {
+  'use strict';
+  const ED = { on: false, sel: null, undo: [], host: null };
+  /* 播放器的内部件都在主脚本闭包里，只从 window.__GS.ed 这座桥拿；S 用代理，读写都落到播放器当前曲目 */
+  const B = G.__GS.ed;
+  const S = new Proxy({}, { get: (_, k) => B.S[k], set: (_, k, v) => { B.S[k] = v; return true; }, has: (_, k) => k in B.S });
+  const KEY = id => 'gs.edit.' + id;
+
+  /* ---------- 和弦名 → 指法（6 弦到 1 弦），移植自 制谱-omr/chord.py ---------- */
+  const ROOT = { 'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'Fb': 4, 'E#': 5, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11, 'Cb': 11, 'B#': 0 };
+  const OPEN = {
+    'C': 'x32010', 'Cmaj7': 'x32000', 'C7': 'x32310', 'Cadd9': 'x32030', 'Csus4': 'x33010', 'Csus2': 'x30010', 'C6': 'x32210',
+    'Cm': 'x35543', 'Cm7': 'x35343', 'C9': 'x32333', 'Cdim7': 'x3424x', 'Caug': 'x3211x',
+    'D': 'xx0232', 'Dm': 'xx0231', 'D7': 'xx0212', 'Dm7': 'xx0211', 'Dmaj7': 'xx0222', 'Dsus4': 'xx0233', 'Dsus2': 'xx0230',
+    'Dadd9': 'x54030', 'D6': 'xx0202', 'Dm6': 'xx0201', 'Dadd11': 'x54030', 'D9': 'x54550', 'Ddim7': 'xx0101', 'Daug': 'xx0332',
+    'E': '022100', 'Em': '022000', 'E7': '020100', 'Em7': '020000', 'Emaj7': '021100', 'Esus4': '022200', 'Em6': '022020',
+    'E9': '020102', 'Em9': '022002', 'Eadd9': '022102', 'Eaug': '032110', 'Edim7': '012020',
+    'F': '133211', 'Fmaj7': 'xx3210', 'Fm': '133111', 'F7': '131211', 'Fm7': '131111', 'Fsus4': '133311', 'F6': '1x3231',
+    'Fadd9': 'xx3213', 'F9': '131213',
+    'G': '320003', 'G7': '320001', 'Gmaj7': '320002', 'Gm': '355333', 'Gm7': '353333', 'Gsus4': '330013', 'Gsus2': '300033',
+    'G6': '320000', 'Gadd9': '320203', 'G9': '320201', 'Gdim7': '3x232x', 'Gaug': '321003',
+    'A': 'x02220', 'Am': 'x02210', 'A7': 'x02020', 'Am7': 'x02010', 'Amaj7': 'x02120', 'Asus4': 'x02230', 'Asus2': 'x02200',
+    'Am6': 'x02212', 'A6': 'x02222', 'Aadd9': 'x02420', 'Am9': 'x02410', 'A9': 'x02423', 'Adim7': 'x01212', 'Aaug': 'x03221',
+    'B': 'x24442', 'Bm': 'x24432', 'B7': 'x21202', 'Bm7': 'x20202', 'Bmaj7': 'x24342', 'Bsus4': 'x24452', 'Bm7b5': 'x2323x',
+    'B7#5': 'x21203', 'Bdim7': 'x2313x', 'Bm6': 'x20102',
+    'F#m': '244222', 'F#m7': '242222', 'F#': '244322', 'F#7': '242322', 'F#m7b5': '2x221x', 'F#dim7': '2x121x',
+    'C#m': 'x46654', 'C#m7': 'x46454', 'C#': 'x46664', 'C#7': 'x46464', 'G#m': '466444', 'G#m7': '464444', 'G#': '466544', 'G#7': '464544',
+    'Bb': 'x13331', 'Bbm': 'x13321', 'Bb7': 'x13131', 'Bbmaj7': 'x13231', 'Eb': 'x68886', 'Ebm': 'x68876', 'Ab': '466544', 'Abm': '466444',
+    'Gbm': '244222', 'Dbm': 'x46654', 'A#m': 'x13321', 'D#m': 'x68876',
+    'C/E': '032010', 'C/G': '332010', 'C/B': 'x22010', 'Am/G': '302210', 'Am/E': '002210', 'D/F#': '2x0232', 'Dm/F': '1x0231',
+    'Em/B': 'x22000', 'Em/D': 'xx0000', 'F/C': 'x33211', 'F/A': 'x03211', 'Fmaj7/C': 'x33210', 'G/B': 'x20003', 'G/D': 'xx0003',
+    'G/F#': '2x0003', 'Em7/B': 'x20000', 'E7/G#': '4x0100', 'E/G#': '4x2100', 'A/C#': 'x42220', 'Am7/G': '302010',
+    'D/A': 'x00232', 'Dsus4/A': 'x00233', 'C/D': 'xx0010', 'G/A': 'x00003', 'F/G': '3x3211', 'Cmaj7/E': '032000', 'Bm/A': 'x04432',
+    'D7/F#': '2x0212', 'Dm7/C': 'x30211', 'G7/B': 'x20001', 'Am/C': 'x32210', 'E7/B': 'x22130', 'Cadd9/E': '032030'
+  };
+  const TE = { '': [0, 2, 2, 1, 0, 0], 'm': [0, 2, 2, 0, 0, 0], '7': [0, 2, 0, 1, 0, 0], 'm7': [0, 2, 0, 0, 0, 0], 'maj7': [0, 'x', 1, 1, 0, 'x'],
+    'sus4': [0, 2, 2, 2, 0, 0], '6': [0, 'x', 2, 1, 2, 'x'], 'm6': [0, 'x', 2, 0, 2, 'x'], '9': [0, 'x', 0, 1, 0, 2],
+    'm7b5': [0, 'x', 1, 0, 1, 'x'], 'dim7': [0, 'x', 1, -1, 1, 'x'], 'add9': [0, 2, 2, 1, 0, 2], '7sus4': [0, 2, 0, 2, 0, 0],
+    'aug': [0, 'x', 2, 1, 1, 'x'], 'm9': [0, 'x', 0, 0, 0, 2], 'maj9': [0, 'x', 1, 1, 0, 2], 'sus2': [0, 2, 2, -1, 0, 0], 'madd9': [0, 2, 2, 0, 0, 2], 'dim': [0, 'x', 'x', -1, 1, 'x'] };
+  const TA = { '': ['x', 0, 2, 2, 2, 0], 'm': ['x', 0, 2, 2, 1, 0], '7': ['x', 0, 2, 0, 2, 0], 'm7': ['x', 0, 2, 0, 1, 0], 'maj7': ['x', 0, 2, 1, 2, 0],
+    'sus4': ['x', 0, 2, 2, 3, 0], 'sus2': ['x', 0, 2, 2, 0, 0], '6': ['x', 0, 2, 2, 2, 2], 'm6': ['x', 0, 2, 0, 2, 0],
+    '9': ['x', 0, -1, 0, 0, 0], 'm7b5': ['x', 0, 1, 0, 1, 'x'], 'dim7': ['x', 0, 1, -1, 1, 'x'], 'add9': ['x', 0, 2, 2, 0, 0],
+    '7sus4': ['x', 0, 2, 0, 3, 0], 'aug': ['x', 0, 3, 2, 2, 'x'], 'm9': ['x', 0, -1, 0, 0, 'x'], 'maj9': ['x', 0, -1, 1, 0, 'x'],
+    'madd9': ['x', 0, 2, 2, 1, 2], 'dim': ['x', 0, 1, 2, 1, 'x'] };
+  const TQ = { 'M7': 'maj7', 'maj': '', 'min': 'm', 'min7': 'm7', 'M9': 'maj9', 'ø': 'm7b5', '°': 'dim' };
+  function gripFor(name) {
+    if (!name) return null;
+    const n = name.trim();
+    if (OPEN[n]) return OPEN[n].split('');
+    const base = (n.includes('/') && !n.endsWith('6/9')) ? n.split('/')[0] : n;
+    if (OPEN[base]) return OPEN[base].split('');
+    const m = /^([A-G][#b]?)(.*)$/.exec(base);
+    if (!m || !(m[1] in ROOT)) return null;
+    const root = ROOT[m[1]], q = (m[2] in TQ) ? TQ[m[2]] : m[2];
+    const fe = (root - 4 + 12) % 12, fa = (root - 9 + 12) % 12;
+    const cands = [];
+    if (q in TE) cands.push([fe, TE[q]]);
+    if (q in TA) cands.push([fa, TA[q]]);
+    if (!cands.length) return null;
+    cands.sort((a, b) => a[0] - b[0]);
+    let [fr, tpl] = cands[0];
+    if (fr === 0 && tpl.some(v => typeof v === 'number' && v < 0)) fr = 12;
+    const out = [];
+    for (const v of tpl) { if (v === 'x') out.push('x'); else { const f = fr + v; if (f < 0) return null; out.push(String(f)); } }
+    return out;
+  }
+
+  /* ---------- 简谱一行文本 ⇄ 音符列表 ---------- */
+  function noteDur(ul, dot, tup) { let d = Math.pow(0.5, ul); if (dot) d *= 1.5; if (tup) d *= 2 / tup; return d; }
+  function serNote(n) {
+    if (n.deg === '-') return '-' + '/'.repeat(n.ul || 0);
+    let s = '';
+    if (n.grace && n.grace.deg != null) s += '[' + n.grace.deg + ']';
+    if (n.acc) s += n.acc;
+    s += n.deg;
+    const o = n.oct || 0; s += o > 0 ? "'".repeat(o) : ','.repeat(-o);
+    if (n.dot) s += '.';
+    s += '/'.repeat(n.ul || 0);
+    return s;
+  }
+  function serBar(b) {
+    const out = []; let i = 0; const ns = b.notes || [];
+    while (i < ns.length) {
+      const t = ns[i].tup;
+      if (t) { const grp = []; while (i < ns.length && ns[i].tup === t) grp.push(serNote(ns[i++])); out.push('(' + grp.join(' ') + ')'); }
+      else out.push(serNote(ns[i++]));
+    }
+    return out.join(' ');
+  }
+  function parseBar(txt) {
+    const notes = []; let tup = 0;
+    const toks = txt.replace(/（/g, '(').replace(/）/g, ')').replace(/[|｜]/g, ' ').trim().split(/\s+/).filter(Boolean);
+    for (let tk of toks) {
+      let open = false, close = false;
+      while (tk.startsWith('(')) { tk = tk.slice(1); open = true; }
+      while (tk.endsWith(')')) { tk = tk.slice(0, -1); close = true; }
+      if (open) tup = 3;
+      if (!tk) { if (close) tup = 0; continue; }
+      const m = /^(?:\[([0-7])\])?([#b]?)([0-7]|-)('*|,*)(\.?)(\/*)$/.exec(tk);
+      if (!m) throw new Error('看不懂「' + tk + '」');
+      const ul = m[6].length, dot = !!m[5], deg = m[3];
+      const n = { deg, oct: m[4].startsWith("'") ? m[4].length : -m[4].length, dur: +noteDur(ul, dot, tup).toFixed(6), ul, dot, dash: deg === '-', grace: null, ly0: null, ly1: null };
+      if (m[1]) n.grace = { deg: m[1], ul: 2 };
+      if (m[2]) n.acc = m[2];
+      if (tup) n.tup = tup;
+      notes.push(n);
+      if (close) tup = 0;
+    }
+    return notes;
+  }
+  const lySlots = ns => ns.filter(n => n.deg !== '-');
+  function serLy(b, k) { return lySlots(b.notes || []).map(n => n[k] || '_').join(''); }
+  function applyLy(ns, k, txt) {
+    const chars = Array.from((txt || '').replace(/\s+/g, ''));
+    const slots = lySlots(ns);
+    slots.forEach((n, i) => { const c = chars[i]; n[k] = (c && c !== '_' && c !== '＿') ? c : null; });
+    return chars.length - slots.length;
+  }
+  function serChords(b) {
+    if (b.chords && b.chords.length) return b.chords.map(c => c.name + ((c.at || 0) ? '@' + c.at : '')).join(' ');
+    return b.chord || '';
+  }
+  function applyChords(b, txt) {
+    const toks = txt.trim().split(/\s+/).filter(Boolean);
+    delete b.chords;
+    if (!toks.length) { b.chord = null; b.grip = null; return []; }
+    const bad = [];
+    const cs = toks.map((t, i) => {
+      const m = /^([^@]+)(?:@([\d.]+))?$/.exec(t); const name = m ? m[1] : t;
+      const at = (m && m[2] != null) ? parseFloat(m[2]) : +(Number(b.beats) * i / toks.length).toFixed(3);
+      const grip = gripFor(name); if (!grip) bad.push(name);
+      return { name, grip, at };
+    });
+    b.chord = cs[0].name; b.grip = cs[0].grip;
+    if (cs.length > 1) b.chords = cs;
+    return bad;
+  }
+
+  /* ---------- 小节增删 ---------- */
+  function row() { return S.score.rows[ED.sel.sr]; }
+  function restBar(beats, like) {
+    const n = Math.max(1, Math.round(beats)), notes = [];
+    for (let i = 0; i < n; i++) notes.push({ deg: '0', oct: 0, dur: +(beats / n).toFixed(6), ul: 0, dot: false, dash: false, grace: null, ly0: null, ly1: null });
+    return { chord: like ? like.chord : null, grip: like ? like.grip : null, beats, ok: true, notes };
+  }
+  function shift(list, idx, d, keys) { (list || []).forEach(q => keys.forEach(k => { if (q[k] >= idx) q[k] += d; })); }
+  function insertBar(r, at) {                 /* 在 at 处插一小节（原来 at 及之后的后移）；伴奏型照抄旁边那小节 */
+    const src = r.tab.bars[Math.min(at, r.tab.bars.length - 1)] || r.tab.bars[r.tab.bars.length - 1];
+    const tb = JSON.parse(JSON.stringify(src)); delete tb.sig;
+    const jb = restBar(Number(tb.beats || r.jp.bars[0].beats || 4), r.jp.bars[Math.min(at, r.jp.bars.length - 1)]);
+    r.tab.bars.splice(at, 0, tb); r.jp.bars.splice(at, 0, jb);
+    r.bt.splice(at + 1, 0, 'bar'); if (r.tab.bt) r.tab.bt.splice(at + 1, 0, 'bar');
+    shift(r.tab.slurs, at, 1, ['b0', 'b1']); shift(r.jp.slurs, at, 1, ['b0', 'b1']);
+    (r.houses || []).forEach(h => { if (h.b0 >= at) h.b0++; if (h.b1 >= at) h.b1++; });
+    if (r.tab.houses) r.tab.houses.forEach(h => { if (h.b0 >= at) h.b0++; if (h.b1 >= at) h.b1++; });
+  }
+  function deleteBar(r, at) {
+    if (r.tab.bars.length <= 1) throw new Error('这一行只剩一小节了，不能删');
+    r.tab.bars.splice(at, 1); r.jp.bars.splice(at, 1);
+    const special = k => k && k !== 'bar';
+    if (special(r.bt[at]) && !special(r.bt[at + 1])) r.bt.splice(at + 1, 1); else r.bt.splice(at, 1);
+    if (r.tab.bt) r.tab.bt = r.bt.slice();
+    const drop = l => (l || []).filter(q => q.b0 !== at && q.b1 !== at);
+    r.tab.slurs = drop(r.tab.slurs); r.jp.slurs = drop(r.jp.slurs);
+    shift(r.tab.slurs, at, -1, ['b0', 'b1']); shift(r.jp.slurs, at, -1, ['b0', 'b1']);
+    const fixH = hs => (hs || []).map(h => { const o = Object.assign({}, h); if (o.b0 > at) o.b0--; if (o.b1 >= at) o.b1--; return o; }).filter(h => h.b1 >= h.b0);
+    r.houses = fixH(r.houses); if (r.tab.houses) r.tab.houses = fixH(r.tab.houses);
+  }
+  function addRow(afterSr, n) {
+    const src = S.score.rows[afterSr];
+    const beats = Number(src.tab.bars[src.tab.bars.length - 1].beats || 4);
+    const tb = JSON.parse(JSON.stringify(src.tab.bars[src.tab.bars.length - 1])); delete tb.sig;
+    const r = { bt: Array(n + 1).fill('bar'), houses: [], tab: { bars: [], bt: Array(n + 1).fill('bar'), houses: [], slurs: [] }, jp: { bars: [], slurs: [] } };
+    const like = src.jp.bars[src.jp.bars.length - 1];
+    for (let i = 0; i < n; i++) { r.tab.bars.push(JSON.parse(JSON.stringify(tb))); r.jp.bars.push(restBar(beats, like)); }
+    S.score.rows.splice(afterSr + 1, 0, r);
+  }
+
+  /* ---------- 重画 + 保存 ---------- */
+  function snapshot() { ED.undo.push(JSON.stringify(S.score)); if (ED.undo.length > 40) ED.undo.shift(); }
+  function rebuild() {
+    const doc = { v: 3, id: S.id, title: S.title, key: S.key, bpm: S.bpm, sig: S.sig, score: S.score };
+    const vr = G.VecRender.toSong(doc);
+    const cur = B.S, keep = { id: cur.id, score: cur.score, vox: cur.vox, edited: true };
+    for (const k in vr.imgs) { G.__SETIMG(k, vr.imgs[k]); delete B.VEC[k]; delete B.VBOX[k]; }
+    for (const k of Object.keys(cur)) delete cur[k];        /* 原地替换：曲库列表、SONGS 里都是同一个对象 */
+    Object.assign(cur, vr.song, keep);
+    const u = B.pos;
+    B.open_(cur); B.buildPlay();
+    try { B.seek(Math.min(u, B.TOT)); } catch (e) { }
+    save();
+    ED.paint();
+  }
+  function save() {
+    try { localStorage.setItem(KEY(S.id), JSON.stringify({ t: Date.now(), score: S.score, key: S.key, bpm: S.bpm, title: S.title })); }
+    catch (e) { msg('本机存储满了，改动没存下（先导出）', true); }
+  }
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(S.score, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (S.title || 'score') + '-score.json';
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  /* ---------- 界面 ---------- */
+  const $ = id => document.getElementById(id);
+  function msg(t, bad) { const m = $('edMsg'); if (!m) return; m.textContent = t || ''; m.classList.toggle('bad', !!bad); }
+  function fill() {
+    const b = ED.sel && row().jp.bars[ED.sel.bi];
+    const info = $('edInfo');
+    if (!b) { info.textContent = '点谱面上的一小节开始编辑'; ['edChord', 'edJp', 'edLy0', 'edLy1'].forEach(k => { $(k).value = ''; $(k).disabled = true; }); return; }
+    ['edChord', 'edJp', 'edLy0', 'edLy1'].forEach(k => $(k).disabled = false);
+    info.textContent = '第 ' + (ED.sel.sr + 1) + ' 行 · 第 ' + (ED.sel.bi + 1) + ' 小节（' + b.beats + ' 拍）';
+    $('edChord').value = serChords(b); $('edJp').value = serBar(b); $('edLy0').value = serLy(b, 'ly0'); $('edLy1').value = serLy(b, 'ly1');
+    msg('');
+  }
+  function apply() {
+    if (!ED.sel) return;
+    const r = row(), b = r.jp.bars[ED.sel.bi];
+    let notes;
+    try { notes = parseBar($('edJp').value); } catch (e) { msg(e.message, true); return false; }
+    if (!notes.length) { msg('简谱不能为空（整小节休止写 0 0 0 0）', true); return false; }
+    snapshot();
+    const tot = notes.reduce((a, n) => a + n.dur, 0);
+    b.notes = notes; b.ok = Math.abs(tot - Number(b.beats)) < 1e-3;
+    const bad = applyChords(b, $('edChord').value);
+    const o0 = applyLy(notes, 'ly0', $('edLy0').value), o1 = applyLy(notes, 'ly1', $('edLy1').value);
+    const warn = [];
+    if (!b.ok) warn.push('这小节加起来 ' + +tot.toFixed(3) + ' 拍，谱是 ' + b.beats + ' 拍');
+    if (bad.length) warn.push('不认识的和弦（只印名字不画图）：' + bad.join(' '));
+    if (o0 > 0 || o1 > 0) warn.push('歌词比音多，多出的没放');
+    rebuild();
+    msg(warn.length ? warn.join('；') : '已应用并保存在本机', warn.length > 0);
+    return true;
+  }
+  function select(sr, bi) { ED.sel = { sr, bi }; fill(); ED.paint(); }
+  ED.paint = function () {
+    document.querySelectorAll('.edsel').forEach(n => n.remove());
+    if (!ED.on || !ED.sel || !B.PL.length) return;
+    const m = B.PL.find(x => x.sr === ED.sel.sr && x.b0 <= ED.sel.bi && ED.sel.bi < x.b1); if (!m) return;
+    const r = B.prows[m.row], st = B.psts[m.row]; if (!r || !st) return;
+    let o = 0; for (let k = m.b0; k < ED.sel.bi; k++) o += m.bars[k - m.b0];
+    const x0 = r.offsetLeft + st.offsetLeft, sw = st.offsetWidth;
+    const L = x0 + sw * m.gx[o] / 100, R = x0 + sw * m.gx[o + m.bars[ED.sel.bi - m.b0]] / 100;
+    const d = document.createElement('div'); d.className = 'edsel';
+    d.style.left = L + 'px'; d.style.width = Math.max(4, R - L) + 'px'; d.style.top = r.offsetTop + 'px'; d.style.height = r.offsetHeight + 'px';
+    B.paper.appendChild(d);
+  };
+  function pick(e) {
+    const hits = B.barHits(e); if (!hits.length) return;
+    const h = hits[0]; if (h.sr == null) return;
+    select(h.sr, h.bi);
+  }
+  function build() {
+    if (ED.host) return;
+    const h = document.createElement('div'); h.id = 'edpanel'; h.hidden = true;
+    h.innerHTML = '<div class="edhd"><b>编辑谱面</b><span id="edInfo"></span><button type="button" id="edClose" title="退出编辑">✕</button></div>'
+      + '<label><span>和弦</span><input id="edChord" placeholder="C 或 C G 或 C@0 G@2" autocomplete="off" spellcheck="false"></label>'
+      + '<label><span>简谱</span><input id="edJp" placeholder="1 2 3/ 5/ - 6\' [4]5 (1 2 3)" autocomplete="off" spellcheck="false"></label>'
+      + '<label><span>歌词 1</span><input id="edLy0" placeholder="一字一音，_ 不唱" autocomplete="off" spellcheck="false"></label>'
+      + '<label><span>歌词 2</span><input id="edLy1" placeholder="第二段词（可空）" autocomplete="off" spellcheck="false"></label>'
+      + '<div class="edbtns"><button type="button" id="edApply" class="pri">应用</button><button type="button" id="edUndo">撤销</button>'
+      + '<button type="button" id="edAddAfter">后面加小节</button><button type="button" id="edAddBefore">前面加小节</button><button type="button" id="edDel">删除小节</button><button type="button" id="edAddRow">下面加一行</button></div>'
+      + '<div class="edbtns"><button type="button" id="edExport">导出 score.json</button><button type="button" id="edRevert">还原成文件那份</button></div>'
+      + '<div id="edMsg"></div>'
+      + '<div class="edhelp">写法：数字 0~7（0 休止）、- 延音、\' 高八度 , 低八度、. 附点、/ 减时线、#/b 升降、[4]5 倚音、(1 2 3) 三连音；和弦 C G 平分一小节，C@0 G@1.5 指定拍位</div>';
+    document.body.appendChild(h); ED.host = h;
+    $('edClose').onclick = () => ED.toggle(false);
+    $('edApply').onclick = apply;
+    $('edUndo').onclick = () => { if (!ED.undo.length) { msg('没有可撤销的'); return; } S.score = JSON.parse(ED.undo.pop()); rebuild(); fill(); msg('已撤销'); };
+    $('edAddAfter').onclick = () => { if (!ED.sel) return; snapshot(); insertBar(row(), ED.sel.bi + 1); rebuild(); select(ED.sel.sr, ED.sel.bi + 1); msg('加了一小节（伴奏型照抄旁边）'); };
+    $('edAddBefore').onclick = () => { if (!ED.sel) return; snapshot(); insertBar(row(), ED.sel.bi); rebuild(); select(ED.sel.sr, ED.sel.bi); msg('加了一小节'); };
+    $('edDel').onclick = () => { if (!ED.sel) return; try { snapshot(); deleteBar(row(), ED.sel.bi); } catch (e) { ED.undo.pop(); msg(e.message, true); return; } rebuild(); select(ED.sel.sr, Math.min(ED.sel.bi, row().jp.bars.length - 1)); msg('删了一小节'); };
+    $('edAddRow').onclick = () => { if (!ED.sel) return; snapshot(); const n = row().jp.bars.length; addRow(ED.sel.sr, n); rebuild(); select(ED.sel.sr + 1, 0); msg('下面加了一行（' + n + ' 小节休止）'); };
+    $('edExport').onclick = exportJson;
+    $('edRevert').onclick = () => { if (!confirm('丢掉本机对这首的全部改动，回到文件那份？')) return; localStorage.removeItem(KEY(S.id)); location.reload(); };
+    ['edChord', 'edJp', 'edLy0', 'edLy1'].forEach(k => $(k).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } e.stopPropagation(); }));
+    ['edChord', 'edJp', 'edLy0', 'edLy1'].forEach(k => $(k).addEventListener('keyup', e => e.stopPropagation()));
+    const eat = e => { if (!ED.on) return; e.stopPropagation(); e.preventDefault(); if (e.type === 'pointerdown' && e.button === 0) pick(e); };
+    B.stage.addEventListener('pointerdown', eat, true); B.stage.addEventListener('click', eat, true);
+    window.addEventListener('resize', () => ED.paint());
+  }
+  ED.toggle = function (on) {
+    build();
+    on = on == null ? !ED.on : !!on;
+    if (on && !(B.S && B.S.score)) { B.say('只有矢量谱能编辑'); return; }
+    ED.on = on; ED.host.hidden = !on; document.body.classList.toggle('editing', on);
+    const b = $('edBtn'); if (b) b.setAttribute('aria-pressed', String(on));
+    if (on) { B.stop(); if (!ED.sel) ED.sel = { sr: 0, bi: 0 }; if (!S.score.rows[ED.sel.sr]) ED.sel = { sr: 0, bi: 0 }; fill(); ED.paint(); B.say('点一小节，改好按「应用」'); }
+    else ED.paint();
+  };
+  ED.hasEdit = id => { try { return !!localStorage.getItem(KEY(id)); } catch (e) { return false; } };
+  /* 设置面板里加入口（矢量谱才有） */
+  function mount() {
+    const v = document.querySelector('#scPanel .vonly'); if (!v || $('edBtn')) return;
+    const h = document.createElement('h3'); h.className = 'sub'; h.textContent = '谱面';
+    const d = document.createElement('div'); d.className = 'scr';
+    const b = document.createElement('button'); b.type = 'button'; b.id = 'edBtn'; b.className = 'sm cjk'; b.textContent = '编辑谱面'; b.setAttribute('aria-pressed', 'false');
+    b.onclick = () => { ED.toggle(); const p = $('scPanel'); if (p) p.hidden = true; };
+    d.appendChild(b); v.appendChild(h); v.appendChild(d);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
+  const css = document.createElement('style');
+  css.textContent = '#edpanel{position:fixed;right:12px;top:56px;width:min(380px,calc(100vw - 24px));z-index:60;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:10px 12px 8px;font-size:13px}'
+    + '#edpanel .edhd{display:flex;align-items:center;gap:8px;margin-bottom:6px}#edpanel .edhd span{flex:1;color:var(--muted);font-size:12px}#edpanel .edhd button{appearance:none;background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer}'
+    + '#edpanel label{display:flex;align-items:center;gap:8px;margin:5px 0}#edpanel label span{width:44px;color:var(--muted);flex:none}'
+    + '#edpanel input{flex:1;min-width:0;font:14px/1.4 var(--num),ui-monospace,Menlo,monospace;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink)}'
+    + '#edpanel .edbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}#edpanel .edbtns button{appearance:none;font:12px/1 inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}'
+    + '#edpanel .edbtns button.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}'
+    + '#edMsg{min-height:16px;margin-top:6px;font-size:12px;color:var(--muted)}#edMsg.bad{color:#c0392b}#edpanel .edhelp{margin-top:6px;font-size:11px;color:var(--muted);line-height:1.5}'
+    + '.edsel{position:absolute;pointer-events:none;border:2px solid var(--accent);border-radius:4px;background:rgba(192,106,34,.08);box-sizing:border-box;z-index:5}'
+    + 'body.editing #stage{cursor:crosshair}';
+  document.head.appendChild(css);
+  G.__ED = ED;
+  ED._t = { parseBar, serBar, gripFor, applyChords, applyLy, serLy, serChords, insertBar, deleteBar, addRow, select, apply, rebuild, fill, exportJson };
+})(window);
 </script>
 </body></html>
