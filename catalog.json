@@ -5,7 +5,8 @@
   "old": "同桌的你（矢量版）-吉他动态谱.html",
   "kind": "vector",
   "v": "f1f9432f",
-  "cat": "song"
+  "cat": "song",
+  "vox": 1
  },
  {
   "id": "sg-86e51ea26747",
@@ -13,7 +14,8 @@
   "old": "后来（矢量版）-吉他动态谱.html",
   "kind": "vector",
   "v": "cf466650",
-  "cat": "song"
+  "cat": "song",
+  "vox": 1
  },
  {
   "id": "sg-40462b4ccfd5",
@@ -30,7 +32,8 @@
   "old": "成都（矢量版）-吉他动态谱.html",
   "kind": "vector",
   "v": "e45baf0f",
-  "cat": "song"
+  "cat": "song",
+  "vox": 1
  },
  {
   "id": "sg-ad2ae8c3d8a2",
@@ -38,7 +41,8 @@
   "old": "弯弯的月亮（矢量版）-吉他动态谱.html",
   "kind": "vector",
   "v": "d805f888",
-  "cat": "song"
+  "cat": "song",
+  "vox": 1
  },
  {
   "id": "sg-1cfe67ed6d75",
@@ -397,7 +401,8 @@
   "title": "有没有人告诉你",
   "kind": "vector",
   "v": "2ac589a9",
-  "cat": "song"
+  "cat": "song",
+  "vox": 1
  },
  {
   "id": "sg-b4e8a7d41d73",
