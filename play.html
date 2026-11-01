@@ -2910,7 +2910,7 @@ function buildPlay(){
   CUM=[0]; PL.forEach(m=>CUM.push(CUM[CUM.length-1]+m.beats));
   TOT=CUM[CUM.length-1]||1;
   ritSet();
-  ballBuild(); kvBuild();
+  ballBuild(); kvBuild(); if(ribbon) ribbonLy();
   GRP=sigOf(S)[1];
   DOWN={}; CLK={}; INBAR=[];
   PL.forEach((m,i)=>{ let o=CUM[i];
@@ -3034,10 +3034,7 @@ function kvBuild(){
 }
 /* 卡拉 OK：当前这段里、拍位已经走到的字加 .ko；换段（这一行弹过去了）就全部恢复。
    字的拍位在 SVG 里（draw.py 写的 data-b = 行内拍位，和 nt 同一把尺），每条谱条第一次用时缓存 */
-function karaPaint(a){
-  let want=[];
-  if(KARA && PL.length){
-    const m=PL[a.i], st=psts[m.row];
+function lyOf(m,st){
     if(st && !st._ly){
       /* 谱条里是整页 SVG（viewBox 裁一段），别的行的字也在 DOM 里，按本行纵向范围筛 */
       const rr=S.rows[m.sr];
@@ -3059,10 +3056,40 @@ function karaPaint(a){
       const has=new Set(st._ly.filter(q=>q.v>0).map(q=>q.v+'@'+barOf(q.b)));
       st._ly.forEach(q=>q.sh=q.v===0 ? (w=>!has.has(w+'@'+barOf(q.b))) : null);
     }
+    return st ? st._ly : [];
+}
+/* 第 v 遍要唱的字：本遍那行，加上只印在第 1 行、本遍那行在这小节没印字的（副歌） */
+const lyWant=(q,v,V)=>v<0 || q.v===Math.min(v,V) || (q.sh && q.sh(Math.min(v,V)));
+/* 跑马灯（用户 2026-11-01：「唱第 2 段时第 1 段的歌词就别显示在上面，容易误导；只显示卡拉 OK 准备高亮的歌词」）：
+   展开后每遍一条谱，各自一份 DOM —— 只留这一遍要唱的字（同卡拉 OK 的判法），其余几段藏掉；
+   留下的那行挪到第 1 行词的位置，谱条上方不空一行 */
+function ribbonLy(){
+  PL.forEach((m,i)=>{
+    const st=psts[m.row], v=KV[i]==null?-1:KV[i]; if(!st || v<0) return;
+    const ly=[...st.querySelectorAll('svg.vec text.cf-lyric[data-b]')], rr=S.rows[m.sr];
+    const mine=ly.filter(e=>{ const y=+e.getAttribute('y'); return y>rr.y0 && y<=rr.y1; });
+    if(!mine.length) return;
+    const V=mine.reduce((x,e)=>Math.max(x,+e.dataset.v||0),0), vv=Math.min(v,V);
+    const ys=k=>mine.filter(e=>(+e.dataset.v||0)===k).map(e=>+e.getAttribute('y'));
+    const y0=Math.min(...ys(0)), yv=vv>0&&ys(vv).length ? Math.min(...ys(vv)) : y0;
+    st._ly=null; const keep=new Set(lyOf(m,st).filter(q=>lyWant(q,v,V)).map(q=>q.e));
+    mine.forEach(e=>{
+      if(!keep.has(e)){ e.style.display='none'; return; }
+      if(yv!==y0 && (+e.dataset.v||0)===vv){
+        const y=+e.getAttribute('y')-(yv-y0), fs=+e.getAttribute('font-size')||17;
+        e.setAttribute('y',y); e.style.transformOrigin=(+e.getAttribute('x'))+'px '+(y-fs*0.36)+'px'; }
+    });
+  });
+}
+function karaPaint(a){
+  let want=[];
+  if(KARA && PL.length){
+    const m=PL[a.i], st=psts[m.row];
+    lyOf(m,st);
     if(st && st._ly.length){
       const r=S.rows[m.sr]; let rb0=0; for(let j=0;j<m.b0;j++) rb0+=r.bb[j];
       const hi=rb0+a.b+0.02, end=rb0+m.beats-1e-6, v=KV[a.i]==null?-1:KV[a.i];
-      want=st._ly.filter(q=>q.b>=rb0-1e-6 && q.b<=hi && q.b<end && (v<0 || q.v===Math.min(v,st._lyV) || (q.sh && q.sh(Math.min(v,st._lyV))))).map(q=>q.e);
+      want=st._ly.filter(q=>q.b>=rb0-1e-6 && q.b<=hi && q.b<end && lyWant(q,v,st._lyV)).map(q=>q.e);
     }
   }
   if(want.length===kOn.length && want.every((e,i)=>e===kOn[i])) return;
