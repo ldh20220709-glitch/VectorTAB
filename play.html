@@ -429,6 +429,11 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
           const fs = sm ? 10.5 : 14;
           const lab_ = T(h.paren) ? '(' + h.f + ')' : h.f;
           out.push(`<text data-k="${dk}" x="${f1(nx)}" y="${f1(sy + fs * 0.35)}" font-size="${fs}" text-anchor="middle" font-family="Helvetica" class="cf-tab">${lab_}</text>`);
+          if (T(h.slide)) {
+            const sx0 = nx + fs * 0.28 * lab_.length + 2;
+            const ya_ = h.slide === 'down' ? sy - 4.5 : sy + 4.5, yb_ = h.slide === 'down' ? sy + 4.5 : sy - 4.5;
+            out.push(`<path d="M${f1(sx0)},${f1(ya_)} L${f1(sx0 + 9)},${f1(yb_)}" class="cs-tab" stroke-width="1.2"/>`);
+          }
         }
       }
     });
@@ -2699,7 +2704,7 @@ ribbon = lsg('ribbon')==='1'; metro = lsg('metro')==='1'; subdiv = lsg('subdiv')
 
 function buildPlay(){
   P.stop();
-  PL=[]; paper.textContent=''; LAB=[]; SEL=null; selAnc=null; selDirty=true;
+  PL=[]; paper.textContent=''; padB(0); LAB=[]; SEL=null; selAnc=null; selDirty=true;
   if(!S || !S.seq.length){ paper.appendChild(el('div','empty','这首还没有谱面内容。')); return; }
   if(!sigSet(S)) setTimeout(()=>say('拍号还没设，先按 4/4 走'),500);
   let curSec='';
@@ -3261,37 +3266,18 @@ function ballHit(p,lv){
   pick.forEach(d=>d.classList.add('on'));
 }
 
+/* 当前行钉在视口顶上（用户 2026-11-01：「不用显示当前行的上一行；底栏隐藏或打开时谱面会动；上面固定住」）：
+   滚动目标只由当前行的 offsetTop 决定，不看视口高度，底栏收放只改下面的空间，谱面纹丝不动。
+   快到谱尾时 scrollHeight 不够把末行顶上去，就在谱面底下临时垫一截（padTail），垫多少算多少；回到顶端清掉。 */
+let padTail=0;
+function padB(v){ v=Math.max(0,Math.round(v)); if(v===padTail) return; padTail=v; paper.style.marginBottom=v?v+'px':''; }
 function follow(dt){
   if(ribbon||!PL.length) return;
   const i=at(pos).i, r=prows[PL[i].row], vh=stage.clientHeight;
-  /* 当前行尽量靠上，好把下一行也带进视野——换行时才有预读时间。
-     原来留 20% 在上方，下一行常常露不全，换行像是突然蹦出来。 */
-  if(!playing && pos<=0){ sy=0; stage.scrollTop=0; written=0; return; }  /* 未播放时停在顶端看标题 */
-  let want=r.offsetTop - vh*0.08;
-
-  /* 屏幕够高时（手机竖屏一屏能塞好几行），把当前行往下挪，上面留一行已经弹过的，
-     眼睛好对位置。电脑是宽扁屏，塞不下就不会触发，所以不用分设备判断。 */
-  const k=prows.indexOf(r), pv=k>0 ? prows[k-1] : null;
-  if(pv){
-    const w2=pv.offsetTop - vh*0.03;
-    if(r.offsetTop + r.offsetHeight + 8 - w2 <= vh) want=w2;   /* 两行都塞得下才让 */
-  }
-
-  const nx=(i+1<PL.length)? prows[PL[i+1].row] : null;
-  if(nx && nx!==r && nx.offsetTop>r.offsetTop){
-    const need=nx.offsetTop + nx.offsetHeight + 8 - vh;   /* 让下一行底边也进来 */
-    want=Math.max(want, Math.min(need, r.offsetTop - 6)); /* 但当前行的顶不能被顶出去 */
-  }
-
-  /* 马上要往回跳：把回跳目标行也拉进视野。装不下就不动——
-     正在弹的那行任何时候都不能被挤出屏幕。 */
-  if(jumpAt>=0){
-    const t=prows[jumpAt];
-    if(t && t.offsetTop < r.offsetTop
-         && r.offsetTop + r.offsetHeight + 8 - t.offsetTop <= vh){
-      want=Math.min(want, t.offsetTop - vh*0.03);
-    }
-  }
+  if(!playing && pos<=0){ padB(0); sy=0; stage.scrollTop=0; written=0; return; }  /* 未播放时停在顶端看标题 */
+  let want=r.offsetTop - 8;
+  const H0=stage.scrollHeight-padTail;                /* 不含垫底的真实内容高 */
+  padB(Math.max(padTail, want+vh-H0));                /* 只增不减：播放中缩回去会让谱面跳 */
   want=Math.max(0, Math.min(stage.scrollHeight-stage.clientHeight, want));
   if(dt===null||REDUCE||Math.abs(want-sy)>stage.clientHeight*1.3) sy=want;
   else sy += (want-sy)*Math.min(1,dt*6);
@@ -3318,8 +3304,9 @@ $('shareBtn').onclick=async()=>{
          document.body.appendChild(t); t.select(); ok=document.execCommand('copy'); t.remove(); }catch(e2){} }
   say(ok ? '链接已复制，发给朋友吧' : '复制失败，请手动复制地址栏');
 };
+/* 提示停留 1.5s → 4s（用户 2026-11-01：「异常的提示来不及看清就关闭了」）；新提示来了照旧顶掉旧的 */
 function say(t){ flash.textContent=t; flash.classList.add('on');
-  clearTimeout(fid); fid=setTimeout(()=>flash.classList.remove('on'),1500); }
+  clearTimeout(fid); fid=setTimeout(()=>flash.classList.remove('on'),4000); }
 
 function frame(t){
   if(!playing) return;
