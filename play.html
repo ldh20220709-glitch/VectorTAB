@@ -1888,9 +1888,38 @@ function vecPage(id){
           const c=document.createElement('style'); c.id='vecCss'+id+k; c.textContent=st.textContent;
           document.head.appendChild(c); }
         st.remove(); });
+      chordDegTag(svg);
     }
   }
   return VEC[id]=svg;
+}
+/* 和弦级数（用户 2026-11-01：「在和弦名后面加上级数，比如 G 调，G 就是一级和弦，Am 就是 2 级和弦，显示 G（1级）、Am（2级）」）。
+   按谱上的调（1=G）算和弦根音离主音几个半音，大调音阶内的标 1~7 级，调外的标 ♭3 / ♯4 / ♭7 这种；斜线和弦按斜线前的根音。
+   只改演奏页谱面（渲染器出的 SVG 不动，和 Python 那套保持逐字节一致）；级数用小一号的字，免得挤到旁边的和弦图。功能谱排版已定稿，不加 */
+const PC={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+function keyPc(){
+  const k=String((S&&(S.key||(S.score&&S.score.meta&&S.score.meta.key)))||'').replace(/\s|＝/g,'=').replace(/^1=/,'').replace(/调$/,'');
+  const m=/^([♭♯#b]?)([A-Ga-g])([♭♯#b]?)/.exec(k); if(!m) return null;
+  let pc=PC[m[2].toUpperCase()]; const acc=(m[1]||m[3]);
+  if(acc==='#'||acc==='♯') pc++; else if(acc==='b'||acc==='♭') pc--;
+  return (pc+12)%12;
+}
+function chordDeg(name, kp){
+  const m=/^([A-G])([#♯b♭]?)/.exec(String(name||'')); if(!m || kp==null) return '';
+  let pc=PC[m[1]]; if(m[2]==='#'||m[2]==='♯') pc++; else if(m[2]==='b'||m[2]==='♭') pc--;
+  const iv=((pc-kp)%12+12)%12;
+  return ({0:'1',1:'♭2',2:'2',3:'♭3',4:'3',5:'4',6:'♯4',7:'5',8:'♭6',9:'6',10:'♭7',11:'7'})[iv]+'级';
+}
+function chordDegTag(svg){
+  const kp=keyPc(); if(kp==null) return;
+  svg.querySelectorAll('text.cf-chordname').forEach(t=>{
+    if(t.querySelector('tspan.deg')) return;
+    const d=chordDeg(t.textContent.trim(), kp); if(!d) return;
+    const fs=parseFloat(t.getAttribute('font-size'))||19;
+    const ts=document.createElementNS('http://www.w3.org/2000/svg','tspan');
+    ts.setAttribute('class','deg cf-chordname'); ts.setAttribute('font-size',(fs*0.62).toFixed(1)); ts.setAttribute('font-weight','400');
+    ts.textContent='（'+d+'）'; t.appendChild(ts);
+  });
 }
 /* 每个元素在整页上的外框，只量一次（谱面元素都是 <svg> 的直接子元素、不带 transform）。
    谱条只放落在自己 viewBox 里的元素：原来每条都是整页拷贝，9 行谱 = 9 份整页 ≈ 2.9 万个元素，
