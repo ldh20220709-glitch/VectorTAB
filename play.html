@@ -3671,7 +3671,21 @@ function sndLegato(e,t){
     const w=v._twin; if(w && w._t0<=t){ const k_=w._rk||1; w.playbackRate.cancelScheduledValues(t); w.playbackRate.setValueAtTime(r0*k_,t);
       if(e.leg.k==='sl') w.playbackRate.linearRampToValueAtTime(r*k_,t+0.08); else w.playbackRate.setValueAtTime(r*k_,t+0.001); }
     v._midi=midi;
-    if(e.leg.k!=='sl'){                              /* 手指触弦 / 拨离的那一点点响 */
+    if(e.leg.k==='sl'){
+      /* 滑到的音（用户 2026-11-02：「滑音的尾音音量太小，听不太出来」）：拨弦的余音到滑音时已经衰减得很弱，
+         真琴是左手按着弦滑、落点照样响。滑的 80ms 保留，快到时用软起音（60ms 淡入、没有拨弦的硬起音）
+         把目标音补到和正常拨弦一样响（七成实测只比原来响 2 dB，仍听不出），旧余音同时淡出；之后这根弦的「正在响」就是新音源 */
+      const ta=t+0.05, src=acx.createBufferSource(), g=acx.createGain();
+      src.buffer=sndBuf(midi, e.vel);
+      const lv=Math.min(1.2, e.vel*(0.86+0.028*(5-e.s)));
+      g.gain.setValueAtTime(0,ta); g.gain.linearRampToValueAtTime(lv,ta+0.06);
+      src.connect(g); g.connect(sPan[e.s]||sBus);
+      src._t0=ta; src._g=g; src._s=e.s; src._base=midi; src._midi=midi;
+      src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
+      src.start(ta, 0.03); sAll.push(src);
+      try{ v._g.gain.setTargetAtTime(0,ta+0.03,0.04); v.stop(ta+0.5); if(w) { w._g.gain.setTargetAtTime(0,ta+0.03,0.04); w.stop(ta+0.5); } }catch(x){}
+      sVoice[e.s]=src;
+    } else {                                         /* 手指触弦 / 拨离的那一点点响 */
       const src=acx.createBufferSource(), g=acx.createGain();
       src.buffer=sndBuf(midi, 0.5); g.gain.value=Math.min(0.5, e.vel*(e.leg.k==='P'?0.4:0.3));
       g.gain.setTargetAtTime(0,t+0.04,0.1);
@@ -4463,6 +4477,7 @@ window.__GS = {
   get song(){ return S; },
   get drum(){ return {on:DRM, hits:dHits, pend:dPend.length}; },
   get tone(){ return {tmb:TMB, kit:KIT, tmbs:Object.keys(TIMBRES), kits:Object.keys(DKITS), bufs:Object.keys(sBuf)}; }, setTmb, setKit, tmbDemo, kitDemo,
+  sndT:{ play:(e,dt)=>{ sndBusGet(); sndPlay(e, acx.currentTime+dt); }, now:()=>acx&&acx.currentTime, ctx:()=>acx },   /* 自测：直接发一个音（滑音音量测试用） */
   get ev(){ return EV; },   /* 自检用：模拟演奏的事件表 */
     get vox(){ return {on:VOX, info:voxInfo(), loaded:!!xBuf, bytes:!!xBytes, retries:xRetries, acx:acx&&acx.state, dur:xBuf&&xBuf.duration, src:!!xSrc||xOn, old:xOld.length, rate:xOn?xRate:(xSrc&&xSrc.playbackRate.value), mode:(xNode&&xWkId===(S&&S.id))?'worklet':'buffer', xT, xPos, xEnd, err:xErr, gain:xBus&&xBus.gain.value}; },
   get vol(){ return {v:VOL, snd:sBus&&sBus.gain.value, drum:dBus&&dBus.gain.value}; },
