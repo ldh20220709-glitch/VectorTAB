@@ -196,9 +196,10 @@
   "title": "滴答",
   "old": "滴答（矢量版）-吉他动态谱.html",
   "kind": "vector",
-  "v": "cd930dc4",
+  "v": "2efec08c",
   "cat": "song",
-  "src": "Q03"
+  "src": "Q03",
+  "vox": 1
  },
  {
   "id": "sg-79f43157ab14",
@@ -300,9 +301,10 @@
   "id": "sg-76fec1b6c450",
   "title": "传奇",
   "kind": "vector",
-  "v": "058418b5",
+  "v": "32a6e742",
   "cat": "song",
-  "src": "Q02"
+  "src": "Q02",
+  "vox": 1
  },
  {
   "id": "sg-1f036e121bed",
@@ -340,9 +342,10 @@
   "id": "sg-50fe12a6181a",
   "title": "声声慢",
   "kind": "vector",
-  "v": "87b42a45",
+  "v": "00fc719e",
   "cat": "song",
-  "src": "Q03"
+  "src": "Q03",
+  "vox": 1
  },
  {
   "id": "sg-d3470db9f667",
