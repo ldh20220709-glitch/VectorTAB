@@ -3559,6 +3559,7 @@ function sndBuild(){
     let u0=CUM[i];
     for(let bi=m.b0; bi<m.b1 && bi<tb.length; bi++){
       const b=tb[bi], units=m.bars[bi-m.b0]||0, beats=b.beats||1;
+      const isLastBar = i===PL.length-1 && bi===Math.min(m.b1,tb.length)-1;
       if(b.sig) sigNow=b.sig;
       const j=jb[bi]||{};
       { let mp=0, mc=0, ly=false;                   /* 鼓编排用：这小节有没有词、旋律平均有多高（简谱音级 + 八度，不管调） */
@@ -3644,8 +3645,12 @@ function sndBuild(){
         if(arrow||roll){
           const bassFirst = !(arrow && arrow.f==='down');
           hs.sort((a,c)=>bassFirst ? c.s-a.s : a.s-c.s);
-          const gap=roll&&!arrow ? 0.028 : 0.012;
-          hs.forEach((e,k)=>{ e.dts+=k*gap; if(hs.length>2) e.vel*=0.85; if(arrow&&!bassFirst) e.vel*=0.6; });   /* 回扫比下扫轻：0.88→0.6（用户 2026-11-01：「现在扫弦毫无轻重可言」） */
+          /* 结尾琶音（用户 2026-11-02：「最后一个小节是琶音，各弦音的间隔稍微大一些，显得速度很慢，同时音量渐小」）：
+             整首最后一小节的琶音，弦间隔 28ms → 110ms（六根约半秒划完），力度逐根递减到一半 */
+          const fin=roll && !arrow && isLastBar;
+          const gap=fin ? 0.11 : (roll&&!arrow ? 0.028 : 0.012);
+          hs.forEach((e,k)=>{ e.dts+=k*gap; if(hs.length>2) e.vel*=0.85; if(arrow&&!bassFirst) e.vel*=0.6;
+            if(fin && hs.length>1) e.vel*=1-0.5*k/(hs.length-1); });   /* 回扫比下扫轻：0.88→0.6（用户 2026-11-01：「现在扫弦毫无轻重可言」） */
         }
         EV.push(...hs);
       });
