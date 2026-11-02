@@ -1855,6 +1855,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
           </div></div>
         </div>
         <button class="sm cjk" id="mode" aria-pressed="false">跑马灯</button>
+        <button class="sm cjk" id="loopBtn" aria-pressed="false" title="循环：不循环 → 列表循环 → 单曲循环">循环</button>
       </div>
     </div>
   </section>
@@ -2744,6 +2745,55 @@ let selNew=false;
 
 function lsg(k){ try{ return localStorage.getItem('gs.'+k); }catch(e){ return null; } }
 function lss(k,v){ try{ localStorage.setItem('gs.'+k,v); }catch(e){} }
+/* 循环（用户 2026-11-02：「播放页面加个循环按钮，可以一直按顺序循环，也可以单曲循环」）：按钮三态 不循环 → 列表循环 → 单曲循环，记在 gs.loop。
+   单曲：走到谱尾不停，seek(0) 接着放（各轨按新锚点从头排）。
+   列表：曲库页点开曲子时把当前栏目、当前排序（含拖拽排序和搜索结果）写进 gs.queue = [[id, v], …]；
+   没有（分享链接直接打开）就取 catalog.json 里同栏目的顺序。谱尾在页面里直接换下一首（不跳页：音频上下文留着，iPhone 上也能接着响），
+   最后一首接回第一首；换好后从头开始（带一小节预备拍当歌间间隔）。 */
+let LOOP=(v=>v==='list'||v==='one'?v:'')(lsg('loop'));
+function setLoop(v){ LOOP=v; lss('loop',v); const b=$('loopBtn'); if(!b) return;
+  b.setAttribute('aria-pressed',String(!!v)); b.textContent=v==='one'?'单曲循环':(v==='list'?'列表循环':'循环'); }
+async function loopQueue(){
+  try{ const q=JSON.parse(localStorage.getItem('gs.queue')||'null'); if(Array.isArray(q) && q.some(x=>x[0]===S.id)) return q; }catch(e){}
+  try{ const cat=await (await fetch('catalog.json?t='+Date.now(),{cache:'no-store'})).json();
+    const me=cat.find(c=>c.id===S.id), k=me?me.cat:'song';
+    return cat.filter(c=>c.cat===k).map(c=>[c.id,c.v||'']); }catch(e){ return null; }
+}
+async function songFetch(id,v){                    /* 同 play.html 启动段 + 离线后端 shim：取 song.json，矢量谱现场画 */
+  const base='songs/'+id+'/', vs=v?'?v='+v:'';
+  const r=await fetch(base+'song.json'+vs); if(!r.ok) throw new Error('HTTP '+r.status);
+  let dv=await r.json(), song;
+  if(dv.score){
+    let edited=false;
+    try{ const ej=localStorage.getItem('gs.edit.'+id); if(ej){ const eo=JSON.parse(ej); if(eo&&eo.score){ dv=Object.assign({},dv,{score:eo.score}); edited=true; } } }catch(e){}
+    const vr=window.VecRender.toSong(dv); song=vr.song; if(edited) song.edited=true; song.score=dv.score;
+    song.vox=(dv.vox&&dv.files&&dv.files.vox)?Object.assign({f:dv.files.vox},dv.vox):null;
+    for(const ik in vr.imgs) window.__SETIMG&&window.__SETIMG(ik,vr.imgs[ik]);
+  } else {
+    song=dv.song;
+    for(const k in (dv.files||{})){ const fn=dv.files[k];
+      window.__SETIMG&&window.__SETIMG(k, /\.svg$/.test(fn) ? 'data:image/svg+xml,'+encodeURIComponent(await (await fetch(base+fn+vs)).text()) : base+fn+vs); }
+  }
+  return Object.assign({id}, song);
+}
+let loopBusy=false;
+async function loopNext(){
+  if(loopBusy||!S) return; loopBusy=true;
+  try{
+    const q=await loopQueue(); if(!q||!q.length) throw new Error('queue');
+    const i=q.findIndex(x=>x[0]===S.id), nx=q[(i+1)%q.length];
+    if(nx[0]!==S.id){
+      say('下一首…');
+      const s=await songFetch(nx[0],nx[1]);
+      const k=LIB.findIndex(x=>x.id===s.id); if(k>=0) LIB[k]=s; else LIB.push(s);
+      open_(s); show('play');
+      document.title=document.title.replace(/《[^》]*》/,'《'+String(s.title||'').replace(/（(矢量版|数字谱|指弹谱)）/g,'')+'》');
+      try{ history.replaceState(history.state,'',location.pathname+'?id='+s.id+'&lib=1'+(nx[1]?'&v='+nx[1]:'')+location.hash); }catch(e){}
+    } else seek(0);
+    if(!playing && !cid) toggle();
+  }catch(e){ say('谱终'); }
+  loopBusy=false;
+}
 ribbon = lsg('ribbon')==='1'; metro = lsg('metro')==='1'; subdiv = lsg('subdiv')==='1'; SND = lsg('snd')==='1'; DRM = lsg('drum')==='1'; VOX = lsg('vox')==='1';
 /* 排法跟着显示模式走：
    跑马灯 = 展开反复，一条带子只往前走；
@@ -3401,7 +3451,11 @@ function frame(t){
      不调 anchor()：节拍器的格子 sched() 已经同样绕过去了，重新对齐反而会抖一下 */
   if(SEL && !drag && pos>=SEL.b && pos<SEL.b+2){ pos=SEL.a+(pos-SEL.b);
     if(aPos>=SEL.b) anchor();               /* 节拍器格子是从段外对齐的（播放中拖了进度条），sched 不会绕，这里重新对齐 */ }
-  if(pos>=TOT){ pos=TOT; paint(); follow(dt); P.stop(); say('谱终'); return; }
+  if(pos>=TOT){ pos=TOT; paint(); follow(dt);
+    if(LOOP==='one'){ seek(0); say('单曲循环'); raf=requestAnimationFrame(frame); return; }   /* 不停：各轨按新锚点从头排 */
+    P.stop();
+    if(LOOP==='list'){ loopNext(); return; }
+    say('谱终'); return; }
   paint(); follow(dt);
   raf=requestAnimationFrame(frame);
 }
@@ -3432,7 +3486,7 @@ function hush(){ pend.forEach(o=>{try{o.stop();}catch(e){}}); pend=[]; }
    排程和节拍器一样：独立定时器、1 秒预排窗口、按音频时钟；锚点自己拷一份（sT/sPos），
    选段绕回时各绕各的，不互相改对方的锚点。 */
 let sndErr='';
-let sTone=null, sShape=null, sPost=null;
+let sTone=null, sShape=null, sPost=null, sDly=null;
 let EV=[], en=-1, sT=0, sPos=0, sVoice=[null,null,null,null,null,null], sAll=[], sBus=null, sPan=[], sBuf={}, sNoise=null, sPlayed=0;
 const S_LEN=3.0, S_MAX=32, S_LIVE=16;          /* 缓冲 3s（上下文采样率）、最多缓存 32 个、同时在响的音源最多 16 个。
                                                    排查手机崩溃时曾砍到 24kHz/无混响/无声像，用户说「没那么好听了」；元凶其实是皮肤特效（见 FALL），音频全部恢复 */
@@ -3617,6 +3671,7 @@ function sndSched(){
     en++;
   }
 }
+function sDlyT(){ const b=bpm||72; return Math.max(0.18,Math.min(0.45, GRP>1?60/(b*GRP):30/b)); }   /* 延迟 = 半拍（/8 拍：一个八分） */
 function sndBusGet(){
   if(sBus) return sBus;
   /* 总线：增益 → 压缩器（扫六根弦叠起来不破音）→ 输出；并联一段 0.5 秒合成脉冲响应当琴箱余响；
@@ -3636,6 +3691,22 @@ function sndBusGet(){
       for(let i=0;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-i/(sr*0.11)); lp+=0.25*(w-lp); d[i]=lp; } }
     const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.22;
     sPost.connect(cv); cv.connect(wg); wg.connect(comp);
+  }catch(e){}
+  /* 用户 2026-11-02：「吉他音加一点点混响和延迟，不要多了」——并联两路都很轻：
+     房间混响 1.2s（15ms 预延迟、低通过的噪声尾，湿声 0.1）；延迟 = 半拍（跟着调速走，限 0.18～0.45s），回授 0.2、回声过 2.2kHz 低通更暗，湿声 0.1 */
+  try{
+    const sr=acx.sampleRate, N=Math.floor(sr*1.2), pd=Math.floor(sr*0.015), ir=acx.createBuffer(2,N,sr);
+    for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0;
+      for(let i=pd;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-(i-pd)/(sr*0.3)); lp+=0.3*(w-lp); d[i]=lp; } }
+    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.1;
+    sPost.connect(cv); cv.connect(wg); wg.connect(comp);
+  }catch(e){}
+  try{
+    const dl=acx.createDelay(1.0); dl.delayTime.value=sDlyT();
+    const lp=acx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2200;
+    const fb=acx.createGain(); fb.gain.value=0.2; const wg=acx.createGain(); wg.gain.value=0.1;
+    sPost.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wg); wg.connect(comp);
+    sDly=dl;
   }catch(e){}
   sPan=[];
   for(let s=0;s<6;s++){
@@ -4042,10 +4113,11 @@ function voxInfo(){ return (S&&S.vox&&S.vox.f)?S.vox:null; }
 function voxSpu0(){ const v=voxInfo(); return (v&&v.bpm) ? 60/(v.bpm*(v.grp||GRP)) : 60/(bpm*GRP); }
 function voxBus(){ if(xBus) return xBus; xBus=acx.createGain(); xBus.gain.value=VOL.vox; xBus.connect(acx.destination);
   /* 一点点房间混响（用户 2026-11-01：「没有感情」——干的合成人声像在耳边念，给一点空间感）：
-     和吉他同一套合成脉冲响应，更长一点（0.9s、衰减 0.25s），湿声 0.16 */
-  try{ const sr=acx.sampleRate, N=Math.floor(sr*0.9), ir=acx.createBuffer(2,N,sr);
-    for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0; for(let i=0;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-i/(sr*0.25)); lp+=0.2*(w-lp); d[i]=lp; } }
-    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.16; xBus.connect(cv); cv.connect(wg); wg.connect(acx.destination); }catch(e){}
+     和吉他同一套合成脉冲响应，更长一点（0.9s、衰减 0.25s），湿声 0.16。
+     2026-11-02「人声也加一点点混响」：1.3s、衰减 0.32s、20ms 预延迟（字头先清楚、尾巴再散开），湿声 0.21 */
+  try{ const sr=acx.sampleRate, N=Math.floor(sr*1.3), pd=Math.floor(sr*0.02), ir=acx.createBuffer(2,N,sr);
+    for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0; for(let i=pd;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-(i-pd)/(sr*0.32)); lp+=0.2*(w-lp); d[i]=lp; } }
+    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.21; xBus.connect(cv); cv.connect(wg); wg.connect(acx.destination); }catch(e){}
   return xBus; }
 function voxFetch(){                       /* 只取字节（不要 AudioContext）：开谱恢复「人声」时先把 0.9 MB 拉回来，按播放时只剩解码 */
   const v=voxInfo(); if(!v||!S) return Promise.resolve(null);
@@ -4178,7 +4250,7 @@ let acxBad=false, hidT=null;
 function audioReset(){
   try{ acx&&acx.close(); }catch(e){}
   acx=null; acxBad=false;
-  sBus=null; sPan=[]; sTone=sShape=sPost=null; sBuf={}; sNoise=null; sVoice=[null,null,null,null,null,null]; sAll=[];
+  sBus=null; sPan=[]; sTone=sShape=sPost=sDly=null; sBuf={}; sNoise=null; sVoice=[null,null,null,null,null,null]; sAll=[];
   dBus=null; dNoise=null; dNoiseL=null; dPend=[]; dPan={};
   xSrc=null; xOld=[]; xBus=null; xNode=null; xWk=null; xWkId=''; xOn=false; xBuf=null; xId=''; xLoading=null; xRetries=0; xRetryAt=0;
 }
@@ -4197,7 +4269,7 @@ function audioVis(){
 }
 function setMetro(on){ metro=!!on; lss('metro',metro?'1':'0'); if(!metro) hush();
   $('met').setAttribute('aria-pressed',String(metro)); if(metro){ audio(); anchor(); } panelLights(); }
-function setBpm(v){ bpm=Math.max(40,Math.min(160,Math.round(v)));
+function setBpm(v){ bpm=Math.max(40,Math.min(160,Math.round(v))); if(sDly&&acx) try{ sDly.delayTime.setTargetAtTime(sDlyT(),acx.currentTime,0.05); }catch(e){}
   durv.textContent=popv.textContent=bpm;
   popt.textContent='全程 '+mmss(dur());
   $('popu').textContent = GRP>1 ? '主拍 / 分钟（附点四分）' : '拍 / 分钟';
@@ -4391,6 +4463,8 @@ function setSub(on){ subdiv=!!on; lss('subdiv',subdiv?'1':'0');
   ballBuild(); if(PL.length) paint(); }   /* 小球跟着细分开关换跳法 */
 $('sub').onclick =e=>{ e.stopPropagation(); setSub(!subdiv); };
 $('mode').onclick=()=>setMode(!ribbon);
+$('loopBtn').onclick=()=>{ setLoop(LOOP===''?'list':(LOOP==='list'?'one':'')); say(LOOP==='one'?'单曲循环':(LOOP==='list'?'列表循环：播完接下一首':'不循环')); };
+setLoop(LOOP);
 /* 弹出面板默认在按钮正上方居中；按钮靠屏幕边（手机上「节拍器」在最左）会被切掉，露出来后量一下、往里推 */
 function placePop(pop){ pop.style.transform=''; if(pop.hidden) return;
   const r=pop.getBoundingClientRect(), W=innerWidth, m=6; let dx=0;
