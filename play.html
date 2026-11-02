@@ -2712,7 +2712,7 @@ function W(u){ if(!RIT||u<=RIT.a) return u; const s=Math.min(u,TOT)-RIT.a; retur
 function Wi(w){ if(!RIT||w<=RIT.a) return w; const wt=W(TOT); if(w>=wt) return TOT+(w-wt); return RIT.a+RIT.L/RIT_D*(1-Math.exp(-(w-RIT.a)*RIT_D/RIT.L)); }
 function ritF(u){ return (!RIT||u<=RIT.a) ? 1 : 1-RIT_D*Math.min(1,(u-RIT.a)/RIT.L); }
 let PL=[], CUM=[0], TOT=0, DOWN={}, CLK={}, INBAR=[], LAB=[], prows=[], psts=[];
-let BPOS=[], BLEN=[];           /* 每个单位：在小节里是第几个（0 起）、这小节几个单位——鼓的律动按它定 */
+let BPOS=[], BLEN=[], DBARS=[], DPL=[];   /* DBARS：演奏顺序里每小节 {u0,n,ly,mp,i}；DPL：每个单位的鼓编排（停 / 加花 / 镲 / 高潮） */           /* 每个单位：在小节里是第几个（0 起）、这小节几个单位——鼓的律动按它定 */
 let GRP=1;                      /* 几个单位算一个主拍：4/4 是 1，6/8 是 3 */
 let subdiv=false;               /* 节拍器是否连细分一起响 */
 let bpm=68, pos=0, playing=false, last=0, raf=0, written=-1, lock=null, cur=-1, sy=0,
@@ -3473,7 +3473,7 @@ function capoPaint(){
 }
 /* 事件表：{u 单位时刻, uo 单位内偏移(占时值比例), dts 秒偏移, s 弦, fret 品(null=闷音), vel 力度} 或 {u, mute:true}（休止：全收） */
 function sndBuild(){
-  EV=[]; en=-1; sPlayed=0;
+  EV=[]; en=-1; sPlayed=0; DBARS=[];
   const sc=S&&S.score; if(!sc||!sc.rows||!PL.length) return;
   let grip=null;                               /* 当前和弦指位（六弦→一弦 6 格），跨小节沿用 */
   const lastF=[null,null,null,null,null,null]; /* 每根弦最近按过的品位：没有和弦图可查时，空箭头/空琶音就扫「手还按着的」 */
@@ -3507,6 +3507,10 @@ function sndBuild(){
       const b=tb[bi], units=m.bars[bi-m.b0]||0, beats=b.beats||1;
       if(b.sig) sigNow=b.sig;
       const j=jb[bi]||{};
+      { let mp=0, mc=0, ly=false;                   /* 鼓编排用：这小节有没有词、旋律平均有多高（简谱音级 + 八度，不管调） */
+        for(const q of (j.notes||[])){ if(((q.ly0||'')+(q.ly1||'')).trim()) ly=true;
+          const mm=/([1-7])$/.exec(String(q.deg||'')); if(mm){ const d=+q.dur||0.5; mp+=(DEGS[+mm[1]]+12*(+q.oct||0))*d; mc+=d; } }
+        DBARS.push({u0, n:units, ly, mp:mc?mp/mc:null, i}); }
       const chs=(j.chords&&j.chords.length)?j.chords:(j.grip?[{grip:j.grip,at:0}]:[]);
       /* 前奏 / 间奏 / solo 的主音与伴奏（用户 2026-11-02：「和弦伴奏音音量都要比主音低，不然主音不突出」）：
          没有歌词的小节里简谱就是吉他的旋律。和简谱同一拍位、音级一致的那个音（几根都对上取最高那根）= 主音，弹满稍加重；
@@ -3595,6 +3599,7 @@ function sndBuild(){
     }
   });
   EV.sort((a,b)=>(a.u-b.u)||(a.dts-b.dts));
+  drmPlan();
 }
 function sndLB(u){ let lo=0, hi=EV.length; while(lo<hi){ const m=(lo+hi)>>1; if(EV[m].u<u) lo=m+1; else hi=m; } return lo; }
 function sndAnchor(){ sT=aT; sPos=aPos; en=-1; sndCancel(); }
@@ -3648,8 +3653,8 @@ function sndBuf(midi, vel){
   if(sBuf[key]) return sBuf[key];
   const sr=acx.sampleRate, f=440*Math.pow(2,(midi-69)/12), P=sr/f-0.5;
   const Pi=Math.floor(P), fr=P-Pi, N=Math.floor(sr*S_LEN), buf=acx.createBuffer(1,N,sr), y=buf.getChannelData(0);
-  const hl = (f<120 ? 0.85 : f<250 ? 0.7 : 0.5)*T.hl;    /* 幅度半衰期（秒），按音色放缩 */
-  const g=Math.pow(0.5, 1/(hl*sr)), k=T.k[br];
+  const hl = (f<160 ? 1.0 : f<250 ? 1.2 : 3.0)*T.hl;   /* 幅度半衰期（秒），按音色放缩；低音弦（根音）衰得最明显（用户 2026-11-02：「和弦根音的音量，应该随着时间衰减」） */
+  const g=Math.pow(0.5, P/(hl*sr)), k=T.k[br];   /* 每绕延迟线一圈乘一次 g，所以指数是周期 P（原来写成 1：低音弦 2.5 秒只掉 6dB，几乎只靠平均滤波在衰） */
   let lp=0, mean=0; for(let i=0;i<=Pi+1;i++){ lp+=k*((Math.random()*2-1)-lp); y[i]=lp; mean+=lp; }
   mean/=(Pi+2); for(let i=0;i<=Pi+1;i++) y[i]-=mean;
   const pp=Math.max(1,Math.round(P*T.pick)); for(let i=Pi+1;i>=pp;i--) y[i]-=0.9*y[i-pp];
@@ -3709,7 +3714,7 @@ function sndLegato(e,t){
          把目标音补到和正常拨弦一样响（七成实测只比原来响 2 dB，仍听不出），旧余音同时淡出；之后这根弦的「正在响」就是新音源 */
       const ta=t+0.05, src=acx.createBufferSource(), g=acx.createGain();
       src.buffer=sndBuf(midi, e.vel);
-      const lv=Math.min(1.0, e.vel*0.55*(0.86+0.028*(5-e.s)));   /* 用户：滑音再低 1～3 dB（×0.8）→「还是高了点，再往下调」×0.55 */
+      const lv=Math.min(1.0, e.vel*0.68*(0.86+0.028*(5-e.s)));   /* 11-02：「滑音的尾音，音量略微再大一些」0.55→0.68（+1.8dB）；之前：再低 1～3dB ×0.8 →「还是高了点，再往下调」×0.55 */
       g.gain.setValueAtTime(0,ta); g.gain.linearRampToValueAtTime(lv,ta+0.06);
       src.connect(g); g.connect(sPan[e.s]||sBus);
       src._t0=ta; src._g=g; src._s=e.s; src._base=midi; src._midi=midi;
@@ -3798,9 +3803,9 @@ addEventListener('pagehide',()=>{ try{ sessionStorage.removeItem('gs.sndlast'); 
      /4 拍：底鼓第 1 拍（4 拍再加第 3 拍），军鼓第 2、4 拍（2/4 第 2 拍；3/4 华尔兹第 2、3 拍轻军鼓），踩镲每拍 + 反拍（八分）
      /8 拍：踩镲每个八分，底鼓每组（附点四分）起拍，军鼓隔组（6/8：1 和 4；12/8：1、7 底鼓，4、10 军鼓）
    排程和节拍器一样：独立定时器、1 秒预排窗口、按音频时钟，自己拷一份锚点（dT/dPos/dnb），选段绕回各绕各的。 */
-let dT=0, dPos=0, dnb=0, dBus=null, dNoise=null, dPend=[], dHits=0, dPan={};
+let dT=0, dPos=0, dnb=0, dBus=null, dNoise=null, dNoiseL=null, dPend=[], dHits=0, dPan={};
 /* 立体声（用户 2026-10-31）：底鼓居中、军鼓略左、踩镲偏右（鼓手视角的摆位），再并一段 0.3 秒的小房间混响（左右声道各自独立的噪声脉冲响应，拉开宽度） */
-const D_PAN={kick:0, snare:-0.18, hat:0.42};
+const D_PAN={kick:0, snare:-0.18, hat:0.42, crash:0.3, tom:-0.1};
 function drmBus(){
   if(dBus) return dBus;
   dBus=acx.createGain(); dBus.gain.value=0.6*VOL.drum; dBus.connect(acx.destination);
@@ -3821,6 +3826,8 @@ function drmOut(kind){                             /* 每种鼓件一个固定�
 }
 function drmNoise(){ if(dNoise) return dNoise; const sr=acx.sampleRate, N=Math.floor(sr*0.3), b=acx.createBuffer(1,N,sr), d=b.getChannelData(0);
   for(let i=0;i<N;i++) d[i]=Math.random()*2-1; dNoise=b; return b; }
+function drmNoiseL(){ if(dNoiseL) return dNoiseL; const sr=acx.sampleRate, N=Math.floor(sr*1.6), b=acx.createBuffer(1,N,sr), d=b.getChannelData(0);
+  for(let i=0;i<N;i++) d[i]=Math.random()*2-1; dNoiseL=b; return b; }
 function drmKeep(n,until){ n._end=until; dPend.push(n); if(dPend.length>40) dPend.splice(0,dPend.length-40); }
 /* 鼓组（用户 2026-11-01：「鼓伴奏的音色也多加一些」）。律动不变，换的是每件鼓怎么合成：
    流行 = 原来那套；摇滚 = 底鼓更沉更长、军鼓更炸；爵士刷 = 刷子扫军鼓（慢起的沙声）+ 叮叮的叮镲代替踩镲、底鼓很轻；
@@ -3837,8 +3844,17 @@ function dNz(bus,t,ftype,fq,Q,pk,att,dec){          /* 一段滤波噪声 */
   const n=acx.createBufferSource(); n.buffer=drmNoise(); const f=acx.createBiquadFilter(); f.type=ftype; f.frequency.value=fq; if(Q!=null) f.Q.value=Q;
   const g=acx.createGain(); dEnv(g,t,pk,att,dec); n.connect(f); f.connect(g); g.connect(bus);
   const L=Math.min(0.29,att+dec+0.02); n.start(t); n.stop(t+L); drmKeep(n,t+L); }
-function drmHit(kind,t,lv){
+function drmHit(kind,t,lv,hz){
   const bus=drmOut(kind);
+  if(kind==='crash'){                              /* 吊镲：长尾高通噪声；刷子 / 卡洪鼓换成轻的 */
+    const soft=KIT==='brush'||KIT==='cajon', L=soft?0.9:1.5;
+    const n=acx.createBufferSource(); n.buffer=drmNoiseL(); const f=acx.createBiquadFilter(); f.type='highpass'; f.frequency.value=soft?6500:4800;
+    const g=acx.createGain(); dEnv(g,t,(soft?0.22:0.42)*lv,0.002,L); n.connect(f); f.connect(g); g.connect(bus); n.start(t); n.stop(t+L+0.05); drmKeep(n,t+L+0.05);
+    dHits++; return; }
+  if(kind==='tom'){                                /* 通鼓：hz=1 高、0 低 */
+    const f0=KIT==='cajon'?(hz?240:170):(hz?190:120);
+    dOsc(bus,t,'sine',f0*1.5,f0,0.06,0.95*lv,0.003,KIT==='e808'?0.4:0.24); dNz(bus,t,'lowpass',1500,null,0.25*lv,0.001,0.04);
+    dHits++; return; }
   if(KIT==='rock'){
     if(kind==='kick'){ dOsc(bus,t,'sine',180,46,0.12,1.25*lv,0.003,0.42); dNz(bus,t,'bandpass',3200,0.9,0.5*lv,0.001,0.03); }
     else if(kind==='snare'){ dNz(bus,t,'bandpass',2200,0.6,2.1*lv,0.002,0.26); dNz(bus,t,'highpass',5000,null,0.5*lv,0.001,0.12); dOsc(bus,t,'triangle',210,190,0.05,0.7*lv,0.002,0.11); }
@@ -3884,6 +3900,56 @@ function drmPattern(u){                            /* 这个单位上打什么�
   if(n===2) return j===0 ? [1,0,1] : [0,0.9,1];
   return j===0 ? [1,0,1] : [0,0,0.9];
 }
+/* 鼓的编排（用户 2026-11-02）：
+   ① 「最后两个小节没有歌词的，鼓伴奏自动停止，尤其是最后一个小节」：曲尾连续无词的小节里，最后两小节（不够两小节就有几小节停几小节）不打；
+      整首都没词（指弹）只停最后一小节。
+   ② 「鼓的节奏适当做一点变化，通常出现在主歌与副歌衔接处，或者感情高潮处」：
+      段落交界 = 段名变了（前奏 / 第 2 遍 / 间奏）、无词↔有词、进入高潮；交界前一小节最后一拍（/8 拍：最后一组）加花——
+      军鼓十六分渐强接通鼓由高到低，进高潮的那次从倒数第二拍就开始；交界小节的强拍补一下吊镲 + 底鼓。
+      高潮 = 有词小节里旋律（往后一句 4 小节平均）最高的那 25%、连着至少 4 小节；高潮里底鼓多一下、军鼓和踩镲都重一点。
+      两次加花至少隔 8 小节，免得太碎；加花不进停鼓的小节。 */
+function drmPlan(){
+  DPL=[]; const B=DBARS, N=B.length; if(!N) return;
+  const mode=new Array(N).fill(null), cr=new Array(N).fill(false), hi=new Array(N).fill(false);
+  const anyLy=B.some(b=>b.ly);
+  let tail=0; for(let k=N-1;k>=0&&!B[k].ly;k--) tail++;
+  const off=anyLy?Math.min(2,tail):1;
+  for(let k=N-off;k<N;k++) mode[k]='off';
+  /* 高潮 */
+  const lyk=B.map((b,k)=>b.ly&&b.mp!=null?k:-1).filter(k=>k>=0);
+  if(lyk.length>=8){
+    const sm=k=>{ let a=0, c=0; for(let q=k;q<Math.min(N,k+4);q++) if(B[q].ly&&B[q].mp!=null){ a+=B[q].mp; c++; } return a/c; };   /* 往后 4 小节（一句）平均：单个高音不算高潮 */
+    const vs=lyk.map(sm).sort((a,b)=>a-b), thr=vs[Math.floor(vs.length*0.75)];
+    const top=new Array(N).fill(false); lyk.forEach(k=>{ if(sm(k)>=thr-1e-6) top[k]=true; });
+    for(let k=1;k<N-1;k++) if(!top[k]&&top[k-1]&&top[k+1]&&B[k].ly) top[k]=true;   /* 中间断一小节的连起来 */
+    for(let k=0;k<N;){ if(!top[k]){k++;continue;} let e=k; while(e<N&&top[e]) e++; if(e-k>=4) for(let q=k;q<Math.min(N,e+3);q++) if(B[q].ly||q<e) hi[q]=true; k=e; }
+  }
+  /* 交界 */
+  const LB=k=>LAB[B[k].i];
+  let last=-99;
+  for(let k=1;k<N;k++){
+    if(mode[k]==='off') break;
+    const lab=B[k].i!==B[k-1].i && LB(k)!==LB(k-1) && !!LB(k);
+    const lyc=B[k].ly!==B[k-1].ly && (B[k].ly ? !B[Math.max(0,k-2)].ly : (k+1<N&&!B[k+1].ly));   /* 无词↔有词：换过去之后至少稳两小节（句间一小节空拍不算） */
+    const up=hi[k]&&!hi[k-1];
+    if(!(lab||lyc||up) || k-last<8) continue;
+    last=k; cr[k]=true;
+    if(mode[k-1]==null && B[k-1].n>=2) mode[k-1]=up?'fill2':'fill';
+  }
+  B.forEach((b,k)=>{ for(let j=0;j<b.n;j++) DPL[b.u0+j]={m:mode[k], cr:cr[k]&&j===0, hi:hi[k], j, n:b.n}; });
+}
+/* 加花：这一单位里打的点 [偏移（单位）, 鼓件, 力度, 通鼓音高]；不在加花段就返回 null */
+function drmFill(u){
+  const p=DPL[u]; if(!p||!(p.m==='fill'||p.m==='fill2')) return null;
+  const span=GRP>1?GRP:(p.m==='fill2'?2:1), from=p.n-span;
+  if(p.j<from) return null;
+  const k=p.j-from, sub=GRP>1?2:4, tot=span*sub, out=[];   /* /4：每拍四下十六分；/8：每个八分两下 */
+  for(let q=0;q<sub;q++){ const x=(k*sub+q)/(tot-1), lv=0.5+0.45*x;
+    if(x<0.5) out.push([q/sub,'snare',lv*0.85,0]);
+    else out.push([q/sub,'tom',lv,(x<0.75?1:0)]); }        /* 后一半通鼓：高 → 低 */
+  if(k===0) out.push([0,'kick',0.8,0]);
+  return out;
+}
 function drmSched(){
   if(!DRM||!acx||(!playing&&!armed)||!PL.length) return;
   const now=acx.currentTime, hz=now+1.0, ups=bpm*GRP, spu=60/ups;
@@ -3892,10 +3958,17 @@ function drmSched(){
     const t=dT+(W(dnb)-W(dPos))*spu;
     if(t>hz) break;
     if(dnb<TOT && t>now-0.02){
-      const [k,s,h]=drmPattern(dnb), tt=Math.max(t,now);
-      if(h) drmHit('hat',tt,h); if(k) drmHit('kick',tt,k); if(s) drmHit('snare',tt,s);
-      const th=dT+(W(dnb+0.5)-W(dPos))*spu;
-      if(GRP===1 && BLEN[dnb]!=null && th>now-0.02) drmHit('hat',Math.max(th,now),0.55);   /* /4 拍：反拍踩镲 */
+      const p=DPL[dnb]||{}, tt=Math.max(t,now), fl=p.m==='off'?null:drmFill(dnb);
+      if(p.m==='off'){ /* 曲尾无词：不打 */ }
+      else if(fl){ fl.forEach(([o,kd,lv,hz2])=>{ const tf=dT+(W(dnb+o)-W(dPos))*spu; if(tf>now-0.02) drmHit(kd,Math.max(tf,now),lv,hz2); }); }
+      else {
+        let [k,s,h]=drmPattern(dnb);
+        if(p.hi){ if(s) s=Math.min(1,s+0.12); if(h) h=Math.min(1,h+0.1); if(!k&&!s&&GRP===1&&p.j===p.n-1&&p.n>=4) k=0.6; if(!k&&GRP>1&&p.j%GRP===2) k=0.55; }   /* 高潮：底鼓多一下 */
+        if(p.cr){ drmHit('crash',tt,0.9); k=Math.max(k,1); }
+        if(h&&!p.cr) drmHit('hat',tt,h); if(k) drmHit('kick',tt,k); if(s) drmHit('snare',tt,s);
+        const th=dT+(W(dnb+0.5)-W(dPos))*spu;
+        if(GRP===1 && BLEN[dnb]!=null && th>now-0.02) drmHit('hat',Math.max(th,now),p.hi?0.68:0.55);   /* /4 拍：反拍踩镲 */
+      }
     }
     dnb++; }
 }
@@ -4098,8 +4171,30 @@ function sched(){
     }
     nb++; }
 }
-function audio(){ if(acx){ if(acx.state==='suspended') acx.resume(); return; }
+/* iPhone Safari 切到后台：AudioContext 被系统打断（state='interrupted'，或者仍报 running 但时钟不走），
+   切回来 resume() 也常常没声，只能刷新（用户 2026-11-02）。办法：切回来发现被打断就先停住；
+   下次点播放（有用户手势）时把整个上下文连同上面挂的节点全部重建，人声按已下载的字节重新解码 */
+let acxBad=false, hidT=null;
+function audioReset(){
+  try{ acx&&acx.close(); }catch(e){}
+  acx=null; acxBad=false;
+  sBus=null; sPan=[]; sTone=sShape=sPost=null; sBuf={}; sNoise=null; sVoice=[null,null,null,null,null,null]; sAll=[];
+  dBus=null; dNoise=null; dNoiseL=null; dPend=[]; dPan={};
+  xSrc=null; xOld=[]; xBus=null; xNode=null; xWk=null; xWkId=''; xOn=false; xBuf=null; xId=''; xLoading=null; xRetries=0; xRetryAt=0;
+}
+function audio(){
+  if(acx){ const st=acx.state;
+    if(acxBad || st==='interrupted' || st==='closed') audioReset();
+    else { if(st!=='running') acx.resume(); return; } }
   const C=window.AudioContext||window.webkitAudioContext; if(C){ acx=new C(); anchor(); } }
+function audioVis(){
+  if(!acx) return;
+  if(document.hidden){ hidT=[acx.currentTime, performance.now()]; return; }
+  const h=hidT; hidT=null; const st=acx.state;
+  const wall=h?(performance.now()-h[1])/1000:0, ran=h?acx.currentTime-h[0]:0;
+  if(st==='interrupted' || st==='closed' || (h && wall>1 && ran<wall*0.5 && (playing||armed))){
+    acxBad=true; if(cid){ clearInterval(cid); cid=0; count.hidden=true; armed=false; stopSched(); } P.stop(); }
+}
 function setMetro(on){ metro=!!on; lss('metro',metro?'1':'0'); if(!metro) hush();
   $('met').setAttribute('aria-pressed',String(metro)); if(metro){ audio(); anchor(); } panelLights(); }
 function setBpm(v){ bpm=Math.max(40,Math.min(160,Math.round(v)));
@@ -4518,14 +4613,14 @@ addEventListener('keydown',e=>{
 /* 原来动一下鼠标就重置计时。现在的规矩是：开始播放 3 秒后收起，
    只有「点谱面暂停」才放回来，中途晃鼠标不该把它顶出来。 */
 addEventListener('resize',()=>{ measureChrome(); fit(); layout(); paint(); if(!playing) follow(null); });
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden && playing) wake(true); });
+document.addEventListener('visibilitychange',()=>{ audioVis(); if(!document.hidden && playing) wake(true); });
 
 /* 自测钩子：整页逻辑包在 IIFE 里，外部拿不到内部状态，
    脚本化回归测试（scripts/selftest.py）就没法验证游标格子和滚动行为。
    只读暴露，不提供任何修改入口，对正常使用没有影响。 */
 window.__GS = {
   get song(){ return S; },
-  get drum(){ return {on:DRM, hits:dHits, pend:dPend.length}; },
+  get drum(){ return {on:DRM, hits:dHits, pend:dPend.length, bars:DBARS.map((b,k)=>{ const p=DPL[b.u0]||{}; return [b.u0,b.n,b.ly?1:0,p.m||'',p.cr?1:0,p.hi?1:0,LAB[b.i]||'']; })}; },
   get tone(){ return {tmb:TMB, kit:KIT, tmbs:Object.keys(TIMBRES), kits:Object.keys(DKITS), bufs:Object.keys(sBuf)}; }, setTmb, setKit, tmbDemo, kitDemo,
   sndT:{ play:(e,dt)=>{ sndBusGet(); sndPlay(e, acx.currentTime+dt); }, now:()=>acx&&acx.currentTime, ctx:()=>acx },   /* 自测：直接发一个音（滑音音量测试用） */
   get ev(){ return EV; },   /* 自检用：模拟演奏的事件表 */
