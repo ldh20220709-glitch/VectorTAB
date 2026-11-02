@@ -1666,6 +1666,9 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
 #spdpop .sub,#simpop .sub,#capopop .sub{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted)}
 #spdpop .pv,#simpop .pv,#capopop .pv{font-family:var(--num);font-size:11px;font-weight:700;color:var(--muted)}
 #spdpop .sl,#simpop .sl,#capopop .sl{position:relative;height:156px;width:44px}
+#simpop .sl.fx{height:84px}
+#simpop .sl.fx input[type=range]{width:80px}   /* 竖杆是转了 -90° 的横 range：长度 = width，跟着外框缩短 */
+#simpop .fxrow{margin-top:10px;padding-top:8px;border-top:1px solid rgba(0,0,0,.08);justify-content:space-around}
 #simpop .col.tg.off{opacity:.38;filter:saturate(.2)}   /* 这首没有的音轨：整列置灰，按钮和滑杆都 disabled（用户 2026-11-01：只剩一根杆不好看） */
 #simpop .col.tg.off .sm,#simpop .col.tg.off input[type=range]{cursor:not-allowed}
 /* BPM 滑块：自绘。原生的是个小圆点，手指/鼠标都不好抓（用户要方形）。
@@ -1837,6 +1840,14 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
               <span class="nm">人声音量</span><span class="sub" id="volv-vox">100%</span>
               <div class="sl short"><input type="range" data-k="vox" min="0" max="150" step="5" value="100"></div>
             </div>
+          </div>
+          <div class="row fxrow">   <!-- 效果（用户 2026-11-02）：三根短杆并排一行，100% = 原来调好的量 -->
+            <div class="col"><span class="nm">吉他混响</span><span class="sub" id="volv-grev">100%</span>
+              <div class="sl fx"><input type="range" data-k="grev" min="0" max="200" step="10" value="100" aria-label="吉他混响"></div></div>
+            <div class="col"><span class="nm">吉他延迟</span><span class="sub" id="volv-gdly">100%</span>
+              <div class="sl fx"><input type="range" data-k="gdly" min="0" max="200" step="10" value="100" aria-label="吉他延迟"></div></div>
+            <div class="col"><span class="nm">人声混响</span><span class="sub" id="volv-vrev">100%</span>
+              <div class="sl fx"><input type="range" data-k="vrev" min="0" max="200" step="10" value="100" aria-label="人声混响"></div></div>
           </div></div>
         </div>
         <div id="capowrap" class="pwrap">
@@ -2726,17 +2737,26 @@ let xBuf=null, xSrc=null, xOld=[], xBus=null, xId='', xErr='', xLoading=null, xT
 let xNode=null, xWk=null, xWkId='', xOn=false, xRate=1;
 let xBytes=null, xBytesId='', xFetching=null, xRetryAt=0, xRetries=0;   /* 开谱时只预取字节，解码等到有了用户手势的 AudioContext 再做 */   /* AudioWorklet 时间伸缩：变速不变调 */
 /* 音量（用户 2026-10-31：做成可调）：试听 / 鼓 / 节拍器各一个倍率，0～1.5，默认 1，记在 gs.vol */
-let VOL={snd:1,drum:1,met:1,vox:1};
-try{ const v=JSON.parse(lsg('vol')||'null'); if(v) for(const k in VOL) if(typeof v[k]==='number') VOL[k]=Math.max(0,Math.min(1.5,v[k])); }catch(e){}
+/* grev / gdly / vrev：吉他混响、吉他延迟、人声混响的湿声倍数（用户 2026-11-02：「人声和吉他混响能在页面做个参数开关吗」），
+   0～200%，100% = 原来调好的量（吉他琴箱 0.22 + 房间 0.1、延迟 0.1、人声 0.21）；混响是播放时实时加的，人声音轨是干声，不用重渲 */
+let VOL={snd:1,drum:1,met:1,vox:1,grev:1,gdly:1,vrev:1};
+const VMAX=k=>(k==='grev'||k==='gdly'||k==='vrev')?2:1.5;
+let sWet=[], sDlyG=null, xWet=null;
+try{ const v=JSON.parse(lsg('vol')||'null'); if(v) for(const k in VOL) if(typeof v[k]==='number') VOL[k]=Math.max(0,Math.min(VMAX(k),v[k])); }catch(e){}
+function wetApply(){
+  sWet.forEach(g=>{ try{ g.gain.value=g._base*VOL.grev; }catch(e){} });
+  if(sDlyG) try{ sDlyG.gain.value=sDlyG._base*VOL.gdly; }catch(e){}
+  if(xWet) try{ xWet.gain.value=xWet._base*VOL.vrev; }catch(e){}
+}
 function setVol(k,v){
-  VOL[k]=Math.max(0,Math.min(1.5,v)); lss('vol',JSON.stringify(VOL));
+  VOL[k]=Math.max(0,Math.min(VMAX(k),v)); lss('vol',JSON.stringify(VOL)); wetApply();
   if(k==='snd' && sBus) sBus.gain.value=0.75*VOL.snd;
   if(k==='drum' && dBus) dBus.gain.value=0.6*VOL.drum;
   if(k==='vox' && xBus) xBus.gain.value=VOL.vox;
   volPaint();
 }
 function volPaint(){ document.querySelectorAll('.pop input[data-k]').forEach(i=>{ const k=i.dataset.k, p=Math.round(VOL[k]*100);
-  i.value=p; i.style.setProperty('--p',(p/150*100)+'%'); const e=$('volv-'+k); if(e) e.textContent=p+'%'; }); }
+  i.value=p; i.style.setProperty('--p',(p/(+i.max||150)*100)+'%'); const e=$('volv-'+k); if(e) e.textContent=p+'%'; }); }
 /* 选段循环：SEL = {a,b} 演奏时间轴上的单位区间 [a,b)（小节边界）；selAnc = 按下时的那一小节；
    selEat = 这次按下是选小节，随后的 click 不许再当「点谱面 = 播放」 */
 let SEL=null, selAnc=null, selEat=false, selDirty=true;
@@ -3562,10 +3582,11 @@ function sndBuild(){
       const isLastBar = i===PL.length-1 && bi===Math.min(m.b1,tb.length)-1;
       if(b.sig) sigNow=b.sig;
       const j=jb[bi]||{};
-      { let mp=0, mc=0, ly=false;                   /* 鼓编排用：这小节有没有词、旋律平均有多高（简谱音级 + 八度，不管调） */
-        for(const q of (j.notes||[])){ if(((q.ly0||'')+(q.ly1||'')).trim()) ly=true;
-          const mm=/([1-7])$/.exec(String(q.deg||'')); if(mm){ const d=+q.dur||0.5; mp+=(DEGS[+mm[1]]+12*(+q.oct||0))*d; mc+=d; } }
-        DBARS.push({u0, n:units, ly, mp:mc?mp/mc:null, i}); }
+      { let mp=0, mc=0, ly=false, lyLast=-1, lyFirst=-1, pq=0; const on=[];   /* 鼓编排用：这小节有没有词、最后一个字从第几拍起唱、旋律平均有多高（简谱音级 + 八度，不管调） */
+        for(const q of (j.notes||[])){ if(((q.ly0||'')+(q.ly1||'')).trim()){ ly=true; lyLast=pq; if(lyFirst<0) lyFirst=pq; }
+          const mm=/([1-7])$/.exec(String(q.deg||'')); if(mm){ const d=+q.dur||0.5; mp+=(DEGS[+mm[1]]+12*(+q.oct||0))*d; mc+=d; on.push(pq); }   /* on：简谱实音的起点（拍），拖腔换音也算在唱 */
+          pq+=+q.dur||0; }
+        DBARS.push({u0, n:units, ly, mp:mc?mp/mc:null, i, lyLast, lyFirst, on, bt:+j.beats||b.beats||pq||4}); }
       const chs=(j.chords&&j.chords.length)?j.chords:(j.grip?[{grip:j.grip,at:0}]:[]);
       /* 前奏 / 间奏 / solo 的主音与伴奏（用户 2026-11-02：「和弦伴奏音音量都要比主音低，不然主音不突出」）：
          没有歌词的小节里简谱就是吉他的旋律。和简谱同一拍位、音级一致的那个音（几根都对上取最高那根）= 主音，弹满稍加重；
@@ -3694,7 +3715,7 @@ function sndBusGet(){
     const sr=acx.sampleRate, N=Math.floor(sr*0.5), ir=acx.createBuffer(2,N,sr);
     for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0;
       for(let i=0;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-i/(sr*0.11)); lp+=0.25*(w-lp); d[i]=lp; } }
-    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.22;
+    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg._base=0.22; wg.gain.value=0.22*VOL.grev; sWet.push(wg);
     sPost.connect(cv); cv.connect(wg); wg.connect(comp);
   }catch(e){}
   /* 用户 2026-11-02：「吉他音加一点点混响和延迟，不要多了」——并联两路都很轻：
@@ -3703,13 +3724,13 @@ function sndBusGet(){
     const sr=acx.sampleRate, N=Math.floor(sr*1.2), pd=Math.floor(sr*0.015), ir=acx.createBuffer(2,N,sr);
     for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0;
       for(let i=pd;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-(i-pd)/(sr*0.3)); lp+=0.3*(w-lp); d[i]=lp; } }
-    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.1;
+    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg._base=0.1; wg.gain.value=0.1*VOL.grev; sWet.push(wg);
     sPost.connect(cv); cv.connect(wg); wg.connect(comp);
   }catch(e){}
   try{
     const dl=acx.createDelay(1.0); dl.delayTime.value=sDlyT();
     const lp=acx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2200;
-    const fb=acx.createGain(); fb.gain.value=0.2; const wg=acx.createGain(); wg.gain.value=0.1;
+    const fb=acx.createGain(); fb.gain.value=0.2; const wg=acx.createGain(); wg._base=0.1; wg.gain.value=0.1*VOL.gdly; sDlyG=wg;
     sPost.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wg); wg.connect(comp);
     sDly=dl;
   }catch(e){}
@@ -3980,17 +4001,31 @@ function drmPattern(u){                            /* 这个单位上打什么�
    ① 「最后两个小节没有歌词的，鼓伴奏自动停止，尤其是最后一个小节」：曲尾连续无词的小节里，最后两小节（不够两小节就有几小节停几小节）不打；
       整首都没词（指弹）只停最后一小节。
    ② 「鼓的节奏适当做一点变化，通常出现在主歌与副歌衔接处，或者感情高潮处」：
-      段落交界 = 段名变了（前奏 / 第 2 遍 / 间奏）、无词↔有词、进入高潮；交界前一小节最后一拍（/8 拍：最后一组）加花——
+      （11-02 收紧，见下方「交界」）只在两段歌词之间进高潮处；交界前一小节最后一拍（/8 拍：最后一组）加花——
       军鼓十六分渐强接通鼓由高到低，进高潮的那次从倒数第二拍就开始；交界小节的强拍补一下吊镲 + 底鼓。
       高潮 = 有词小节里旋律（往后一句 4 小节平均）最高的那 25%、连着至少 4 小节；高潮里底鼓多一下、军鼓和踩镲都重一点。
       两次加花至少隔 8 小节，免得太碎；加花不进停鼓的小节。 */
 function drmPlan(){
   DPL=[]; const B=DBARS, N=B.length; if(!N) return;
-  const mode=new Array(N).fill(null), cr=new Array(N).fill(false), hi=new Array(N).fill(false);
+  const mode=new Array(N).fill(null), cr=new Array(N).fill(false), hi=new Array(N).fill(false), fend=new Array(N).fill(0);
   const anyLy=B.some(b=>b.ly);
   let tail=0; for(let k=N-1;k>=0&&!B[k].ly;k--) tail++;
   const off=anyLy?Math.min(2,tail):1;
   for(let k=N-off;k<N;k++) mode[k]='off';
+  /* 前奏、间奏不打（用户 2026-11-02：「前奏我不建议加鼓伴奏，只出现在正文里。间奏也不加」）：
+     第一句词之前全停；连续 ≥2 小节没词 = 间奏，停；句间只空 1 小节的照打（不然唱段里鼓一断一断）。
+     接在前奏 / 间奏后面、词从后半小节才起的弱起小节也停——鼓从第一个整小节唱段的强拍进 */
+  if(anyLy){
+    for(let k=0;k<N;){
+      if(B[k].ly){ k++; continue; }
+      let e=k; while(e<N&&!B[e].ly) e++;
+      if(k===0 || e-k>=2){
+        for(let q=k;q<e;q++) mode[q]='off';
+        if(e<N && B[e].lyFirst >= (B[e].bt||4)/2-1e-6) mode[e]='off';
+      }
+      k=e;
+    }
+  }
   /* 高潮 */
   const lyk=B.map((b,k)=>b.ly&&b.mp!=null?k:-1).filter(k=>k>=0);
   if(lyk.length>=8){
@@ -4000,25 +4035,38 @@ function drmPlan(){
     for(let k=1;k<N-1;k++) if(!top[k]&&top[k-1]&&top[k+1]&&B[k].ly) top[k]=true;   /* 中间断一小节的连起来 */
     for(let k=0;k<N;){ if(!top[k]){k++;continue;} let e=k; while(e<N&&top[e]) e++; if(e-k>=4) for(let q=k;q<Math.min(N,e+3);q++) if(B[q].ly||q<e) hi[q]=true; k=e; }
   }
-  /* 交界 */
-  const LB=k=>LAB[B[k].i];
+  /* 交界（用户 2026-11-02 改规则：「不出现在前奏或间奏与歌词之间衔接处，也不能插在一句歌词中间，只能出现在歌词段落之间，
+     并且有情绪递进的地方，不需要太多」）：只在进高潮处；前后两小节都得是有词的小节（不碰前奏 / 间奏衔接）；
+     加花那段（末 1 拍，进高潮 2 拍）里不能有新字起唱——只落在句尾拖音 / 句间空拍上（2 拍不行退 1 拍，1 拍也不行就前后挪 ≤2 小节找句间）；
+     两处至少隔 16 小节 */
+  /* 加花窗口：返回 [拍数 2|1|0, 窗口结束的单位]。A) 小节末尾空着（最后一个字在末 1～2 拍之前起唱）→ 窗口到小节尾；
+     B) 这小节只有末尾的弱起字（下一句从这里起，有没有人告诉你 / 弯弯的月亮进副歌都是）→ 窗口截在弱起字前的整拍 */
+  /* 窗口里不许有任何简谱实音起唱（新字、拖腔换音都算），只能是长音延续 / 延音线 / 休止 */
+  const freeTail=k=>{ const b=B[k]; if(!b||!b.ly) return [0,0]; const bt=b.bt||4, upb=b.n/bt;
+    const clear=(a,e)=>a>=-1e-6 && !(b.on||[]).some(x=>x>=a-1e-6 && x<e-1e-6);
+    if(GRP>1){ const sp=Math.min(bt,1.5); return clear(bt-sp,bt)?[1,b.n]:[0,0]; }   /* /8 拍加花占末一组（附点四分 = 1.5 拍） */
+    const ends=[bt]; if(b.lyLast>=1.5) ends.push(Math.floor(b.lyLast+1e-6));   /* B) 末尾弱起字前 */
+    for(const e of ends) for(const sp of [2,1]) if(e-sp>=0 && clear(e-sp,e)) return [sp,Math.round(e*upb)];
+    return [0,0]; };
   let last=-99;
   for(let k=1;k<N;k++){
-    if(mode[k]==='off') break;
-    const lab=B[k].i!==B[k-1].i && LB(k)!==LB(k-1) && !!LB(k);
-    const lyc=B[k].ly!==B[k-1].ly && (B[k].ly ? !B[Math.max(0,k-2)].ly : (k+1<N&&!B[k+1].ly));   /* 无词↔有词：换过去之后至少稳两小节（句间一小节空拍不算） */
-    const up=hi[k]&&!hi[k-1];
-    if(!(lab||lyc||up) || k-last<8) continue;
-    last=k; cr[k]=true;
-    if(mode[k-1]==null && B[k-1].n>=2) mode[k-1]=up?'fill2':'fill';
+    if(mode[k]==='off') continue;                         /* 前奏 / 间奏 / 曲尾停鼓的小节跳过（原来是 break：前奏也停鼓后一开头就退出了） */
+    if(!(hi[k]&&!hi[k-1])) continue;
+    let pick=-1, want=0;
+    for(const d of [0,-1,1,-2,2]){ const q=k+d; if(q<2||q>=N||mode[q]==='off') continue;
+      if(!B[q].ly || !B[q-1].ly || mode[q-1]==='off') continue;   /* 前后都在唱：不接前奏 / 间奏（那些小节已经停鼓） */
+      const f=freeTail(q-1); if(!f[0]) continue; pick=q; want=f; break; }
+    if(pick<0 || pick-last<16) continue;
+    last=pick; cr[pick]=true;
+    if(mode[pick-1]==null && B[pick-1].n>=2){ mode[pick-1]=(want[0]===2&&GRP===1)?'fill2':'fill'; fend[pick-1]=want[1]; }
   }
-  B.forEach((b,k)=>{ for(let j=0;j<b.n;j++) DPL[b.u0+j]={m:mode[k], cr:cr[k]&&j===0, hi:hi[k], j, n:b.n}; });
+  B.forEach((b,k)=>{ for(let j=0;j<b.n;j++) DPL[b.u0+j]={m:mode[k], cr:cr[k]&&j===0, hi:hi[k], j, n:b.n, fe:fend[k]||b.n}; });
 }
 /* 加花：这一单位里打的点 [偏移（单位）, 鼓件, 力度, 通鼓音高]；不在加花段就返回 null */
 function drmFill(u){
   const p=DPL[u]; if(!p||!(p.m==='fill'||p.m==='fill2')) return null;
-  const span=GRP>1?GRP:(p.m==='fill2'?2:1), from=p.n-span;
-  if(p.j<from) return null;
+  const span=GRP>1?GRP:(p.m==='fill2'?2:1), from=(p.fe||p.n)-span;
+  if(p.j<from || p.j>=(p.fe||p.n)) return null;            /* 窗口外（弱起字那拍起）照常打 */
   const k=p.j-from, sub=GRP>1?2:4, tot=span*sub, out=[];   /* /4：每拍四下十六分；/8：每个八分两下 */
   for(let q=0;q<sub;q++){ const x=(k*sub+q)/(tot-1), lv=0.5+0.45*x;
     if(x<0.5) out.push([q/sub,'snare',lv*0.85,0]);
@@ -4122,7 +4170,7 @@ function voxBus(){ if(xBus) return xBus; xBus=acx.createGain(); xBus.gain.value=
      2026-11-02「人声也加一点点混响」：1.3s、衰减 0.32s、20ms 预延迟（字头先清楚、尾巴再散开），湿声 0.21 */
   try{ const sr=acx.sampleRate, N=Math.floor(sr*1.3), pd=Math.floor(sr*0.02), ir=acx.createBuffer(2,N,sr);
     for(let c=0;c<2;c++){ const d=ir.getChannelData(c); let lp=0; for(let i=pd;i<N;i++){ const w=(Math.random()*2-1)*Math.exp(-(i-pd)/(sr*0.32)); lp+=0.2*(w-lp); d[i]=lp; } }
-    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg.gain.value=0.21; xBus.connect(cv); cv.connect(wg); wg.connect(acx.destination); }catch(e){}
+    const cv=acx.createConvolver(); cv.buffer=ir; const wg=acx.createGain(); wg._base=0.21; wg.gain.value=0.21*VOL.vrev; xWet=wg; xBus.connect(cv); cv.connect(wg); wg.connect(acx.destination); }catch(e){}
   return xBus; }
 function voxFetch(){                       /* 只取字节（不要 AudioContext）：开谱恢复「人声」时先把 0.9 MB 拉回来，按播放时只剩解码 */
   const v=voxInfo(); if(!v||!S) return Promise.resolve(null);
@@ -4255,7 +4303,7 @@ let acxBad=false, hidT=null;
 function audioReset(){
   try{ acx&&acx.close(); }catch(e){}
   acx=null; acxBad=false;
-  sBus=null; sPan=[]; sTone=sShape=sPost=sDly=null; sBuf={}; sNoise=null; sVoice=[null,null,null,null,null,null]; sAll=[];
+  sBus=null; sPan=[]; sTone=sShape=sPost=sDly=null; sWet=[]; sDlyG=null; xWet=null; sBuf={}; sNoise=null; sVoice=[null,null,null,null,null,null]; sAll=[];
   dBus=null; dNoise=null; dNoiseL=null; dPend=[]; dPan={};
   xSrc=null; xOld=[]; xBus=null; xNode=null; xWk=null; xWkId=''; xOn=false; xBuf=null; xId=''; xLoading=null; xRetries=0; xRetryAt=0;
 }
@@ -4699,12 +4747,12 @@ document.addEventListener('visibilitychange',()=>{ audioVis(); if(!document.hidd
    只读暴露，不提供任何修改入口，对正常使用没有影响。 */
 window.__GS = {
   get song(){ return S; },
-  get drum(){ return {on:DRM, hits:dHits, pend:dPend.length, bars:DBARS.map((b,k)=>{ const p=DPL[b.u0]||{}; return [b.u0,b.n,b.ly?1:0,p.m||'',p.cr?1:0,p.hi?1:0,LAB[b.i]||'']; })}; },
+  get drum(){ return {on:DRM, hits:dHits, pend:dPend.length, bars:DBARS.map((b,k)=>{ const p=DPL[b.u0]||{}; return [b.u0,b.n,b.ly?1:0,p.m||'',p.cr?1:0,p.hi?1:0,LAB[b.i]||'',b.lyFirst,b.lyLast,b.bt]; })}; },
   get tone(){ return {tmb:TMB, kit:KIT, tmbs:Object.keys(TIMBRES), kits:Object.keys(DKITS), bufs:Object.keys(sBuf)}; }, setTmb, setKit, tmbDemo, kitDemo,
   sndT:{ play:(e,dt)=>{ sndBusGet(); sndPlay(e, acx.currentTime+dt); }, now:()=>acx&&acx.currentTime, ctx:()=>acx },   /* 自测：直接发一个音（滑音音量测试用） */
   get ev(){ return EV; },   /* 自检用：模拟演奏的事件表 */
     get vox(){ return {on:VOX, info:voxInfo(), loaded:!!xBuf, bytes:!!xBytes, retries:xRetries, acx:acx&&acx.state, dur:xBuf&&xBuf.duration, src:!!xSrc||xOn, old:xOld.length, rate:xOn?xRate:(xSrc&&xSrc.playbackRate.value), mode:(xNode&&xWkId===(S&&S.id))?'worklet':'buffer', xT, xPos, xEnd, err:xErr, gain:xBus&&xBus.gain.value}; },
-  get vol(){ return {v:VOL, snd:sBus&&sBus.gain.value, drum:dBus&&dBus.gain.value}; },
+  get vol(){ return {v:VOL, snd:sBus&&sBus.gain.value, drum:dBus&&dBus.gain.value, wet:sWet.map(g=>+g.gain.value.toFixed(3)), dly:sDlyG&&+sDlyG.gain.value.toFixed(3), vwet:xWet&&+xWet.gain.value.toFixed(3)}; },
   shareUrl: () => shareUrl(),
   get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, leg:sLeg, rates:sVoice.map(v=>v?+v.playbackRate.value.toFixed(4):null), bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
   get play(){ return PL; },
