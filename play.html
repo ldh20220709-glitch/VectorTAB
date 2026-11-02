@@ -1839,6 +1839,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
               <button class="sm cjk" id="vox" aria-pressed="false" hidden title="人声：用歌声合成声库按谱唱出歌词，跟着游标走（做过人声音轨的曲目才有）（v）">人声</button>
               <span class="nm">人声音量</span><span class="sub" id="volv-vox">100%</span>
               <div class="sl short"><input type="range" data-k="vox" min="0" max="150" step="5" value="100"></div>
+              <select id="voxOct" class="pick" title="人声八度（实时变调）"><option value="-12">低八度</option><option value="0" selected>原调</option><option value="12">高八度</option></select>
             </div>
           </div>
           <div class="row fxrow">   <!-- 效果（用户 2026-11-02）：三根短杆并排一行，100% = 原来调好的量 -->
@@ -1854,9 +1855,9 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
           <button class="sm cjk" id="capo" aria-expanded="false" aria-pressed="false" title="变调夹：模拟夹在第几品——吉他和人声一起跟着升降（谱上标的品位是默认）">变调夹</button>
           <div id="capopop" class="pop" hidden><div class="row">
             <div class="col">
-              <span class="hd" id="capov">0</span><span class="unit">品</span>
+              <span class="hd" id="capov">0</span><span class="unit" id="capou">品</span>
               <span class="sub" id="capot"></span><span class="pv">高</span>
-              <div class="sl"><input type="range" id="capoi" min="0" max="7" step="1" value="0" aria-label="变调夹品位"></div>
+              <div class="sl"><input type="range" id="capoi" min="-5" max="7" step="1" value="0" aria-label="变调夹品位"></div>
               <span class="pv">低</span>
             </div>
             <div class="col tg">
@@ -3529,10 +3530,17 @@ function capoMeta(){ const m=/\d+/.exec(String((S&&S.score&&S.score.meta&&S.scor
    吉他按谱发声直接加到 MIDI 上，人声按「夹的 − 谱上的」半音数在 worklet 里变调（变速不变调那套之上再做重采样） */
 let CAPO=null;
 function sndCapo(){ return CAPO!=null ? CAPO : capoMeta(); }
-function voxPitch(){ return Math.pow(2,(sndCapo()-capoMeta())/12); }
-function capoLoad(){ const v=S?lsg('capo.'+S.id):null; CAPO=(v!=null && v!=='' && isFinite(+v)) ? Math.max(0,Math.min(7,+v)) : null; capoPaint(); }
+/* 人声八度（用户 2026-11-02：「人声能在界面现调低一个八度或高一个八度吗」「先采用实时变调看看效果」）：
+   VOCT = −12 / 0 / +12 半音，和变调夹叠在一起进 worklet 的重采样变调（共振峰跟着移，±12 音色会变，先听效果） */
+let VOCT=(v=>v==='-12'||v==='12'?+v:0)(lsg('voct'));
+function setVoct(v){ VOCT=+v||0; lss('voct',String(VOCT)); const e=$('voxOct'); if(e) e.value=String(VOCT); if(acx && (playing||armed)) anchor(); }
+function voxPitch(){ return Math.pow(2,(sndCapo()-capoMeta()+VOCT)/12); }
+/* 往低（用户 2026-11-02：「现在变调夹只能往高调，没法往低」）：允许到 −5——真吉他是整把调低弦（降半音调弦那种），
+   吉他 MIDI 照样加上去（负数就是往下），人声一起降；面板上负数显示成「降 N 半音」 */
+const CAPO_MIN=-5, CAPO_MAX=7;
+function capoLoad(){ const v=S?lsg('capo.'+S.id):null; CAPO=(v!=null && v!=='' && isFinite(+v)) ? Math.max(CAPO_MIN,Math.min(CAPO_MAX,+v)) : null; capoPaint(); }
 function setCapo(v){
-  CAPO=(v==null || +v===capoMeta()) ? null : Math.max(0,Math.min(7,Math.round(+v)));
+  CAPO=(v==null || +v===capoMeta()) ? null : Math.max(CAPO_MIN,Math.min(CAPO_MAX,Math.round(+v)));
   if(S) lss('capo.'+S.id, CAPO==null?'':String(CAPO));
   capoPaint();
   if(acx && (playing||armed)) anchor();      /* 播放中：吉他从下一个音起、人声立刻按新调接上 */
@@ -3540,8 +3548,8 @@ function setCapo(v){
 function capoPaint(){
   const b=$('capo'); if(!b) return;
   const c=sndCapo(), m=capoMeta(), d=c-m;
-  b.textContent='变调夹'+(CAPO!=null?' '+c:''); b.setAttribute('aria-pressed',String(CAPO!=null));
-  $('capov').textContent=c; const i=$('capoi'); i.value=c; i.style.setProperty('--p',((c-i.min)/(i.max-i.min)*100)+'%');
+  b.textContent='变调夹'+(CAPO!=null?' '+(c<0?'−'+(-c):c):''); b.setAttribute('aria-pressed',String(CAPO!=null));
+  $('capov').textContent=c<0?'−'+(-c):c; const cu=$('capou'); if(cu) cu.textContent=c<0?'半音':'品'; const i=$('capoi'); i.value=c; i.style.setProperty('--p',((c-i.min)/(i.max-i.min)*100)+'%');
   $('capot').textContent='谱上 '+m+' 品';
   $('capod').textContent= d===0 ? '\u00a0' : (d>0?'升 '+d+' 半音':'降 '+(-d)+' 半音');
 }
@@ -4532,6 +4540,7 @@ simpop.onclick=e=>e.stopPropagation();
 $('capo').onclick=e=>{ e.stopPropagation(); capopop.hidden=!capopop.hidden; $('capo').setAttribute('aria-expanded',String(!capopop.hidden)); if(!capopop.hidden){ clearTimeout(tid); lean(false); } else idle(); capoPaint(); placePop(capopop); };
 capopop.onclick=e=>e.stopPropagation();
 $('capoi').oninput=()=>setCapo(+$('capoi').value);
+$('voxOct').onchange=()=>setVoct($('voxOct').value); $('voxOct').value=String(VOCT);
 $('capoRst').onclick=()=>setCapo(null);
 document.querySelectorAll('.pop input[data-k]').forEach(i=>{ i.oninput=()=>setVol(i.dataset.k, +i.value/100); });
 volPaint();
