@@ -3677,7 +3677,7 @@ function sndLegato(e,t){
          把目标音补到和正常拨弦一样响（七成实测只比原来响 2 dB，仍听不出），旧余音同时淡出；之后这根弦的「正在响」就是新音源 */
       const ta=t+0.05, src=acx.createBufferSource(), g=acx.createGain();
       src.buffer=sndBuf(midi, e.vel);
-      const lv=Math.min(1.0, e.vel*0.8*(0.86+0.028*(5-e.s)));   /* 用户：滑音再低 1～3 dB → ×0.8 ≈ −2 dB */
+      const lv=Math.min(1.0, e.vel*0.55*(0.86+0.028*(5-e.s)));   /* 用户：滑音再低 1～3 dB（×0.8）→「还是高了点，再往下调」×0.55 */
       g.gain.setValueAtTime(0,ta); g.gain.linearRampToValueAtTime(lv,ta+0.06);
       src.connect(g); g.connect(sPan[e.s]||sBus);
       src._t0=ta; src._g=g; src._s=e.s; src._base=midi; src._midi=midi;
@@ -3691,7 +3691,7 @@ function sndLegato(e,t){
          留住一点冲击——七成 + 跳过 20ms 实测和不补一样（拨弦的响度主要在起音那一下），旧余音淡出 */
       const src=acx.createBufferSource(), g=acx.createGain();
       src.buffer=sndBuf(midi, e.vel);
-      const lv=Math.min(1.2, e.vel*(e.leg.k==='P'?0.9:1.0)*(0.86+0.028*(5-e.s)));
+      const lv=Math.min(1.0, e.vel*(e.leg.k==='P'?0.5:0.6)*(0.86+0.028*(5-e.s)));   /* 用户：「击弦、勾弦音量要比前一个音低」：击 0.6、勾 0.5 */
       g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(lv,t+0.008);
       src.connect(g); g.connect(sPan[e.s]||sBus);
       src._t0=t; src._g=g; src._s=e.s; src._base=midi; src._midi=midi;
