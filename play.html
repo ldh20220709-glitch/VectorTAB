@@ -3787,8 +3787,11 @@ function sndHush(){                                /* 停住：全部 40ms 内�
   sVoice=[null,null,null,null,null,null];
 }
 /* 手机上试听时整页崩掉会自动重载：上次的记录还在 sessionStorage 里，就是崩前最后一个音。报出来，用户截图就能告诉我崩在哪 */
+/* 假警报（用户 2026-11-02 后来报「上次试听异常退出」，实测同一段一路播过去没事）：播放中刷新、点「曲库」、关页面也不经过 sndHush，
+   记录留着就被当成崩溃。正常离开页面浏览器会发 pagehide（真崩溃不会），这时清掉；另外只报同一首的 */
+addEventListener('pagehide',()=>{ try{ sessionStorage.removeItem('gs.sndlast'); }catch(x){} });
 (function(){ try{ const r=sessionStorage.getItem('gs.sndlast'); if(!r) return; sessionStorage.removeItem('gs.sndlast'); sndErr='上次异常退出 '+r;
-  const d=JSON.parse(r); setTimeout(()=>say('上次试听异常退出：第 '+d.played+' 个音 · 位置 '+d.pos+' · 弦 '+(d.e.s+1)+' 品 '+d.e.f),1500); }catch(x){} })();
+  const d=JSON.parse(r); if(d.id && S && d.id!==S.id) return; setTimeout(()=>say('上次试听异常退出：第 '+d.played+' 个音 · 位置 '+d.pos+' · 弦 '+(d.e.s+1)+' 品 '+d.e.f),1500); }catch(x){} })();
 /* ================= 鼓伴奏 =================
    全合成、不用采样：底鼓 = 正弦 150→50Hz 扫频 + 快衰；军鼓 = 带通噪声 + 180Hz 三角波身体；踩镲 = 高通噪声 50ms。
    律动按拍号固定（BPOS/BLEN：这个单位在小节里的位置）：
