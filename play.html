@@ -3481,6 +3481,7 @@ function sndBuild(){
      其他拍中等，半拍 0.74、四分之一拍 0.68；谱上的重音记号再加 0.18。力度也决定缓冲的亮度档，重弹更亮 */
   const sig0=(sc.meta&&sc.meta.sig)||S.sig||'4/4'; let sigNow=sig0;
   /* 这首的指弹行有没有着重号：一个都没有（128 首里 Game of Thrones、云宫迅音等几首）就不分旋律/伴奏，免得整首都被压轻 */
+  const DEGS=[0,0,2,4,5,7,9,11], kp0=keyPc(), capC=capoMeta(); let prevSolo=false;   /* 简谱音级 → 半音；谱上的变调夹：品位 + 夹 = 实际音高 */
   const hasAcc=sc.rows.some(r=>r.tab_only && (r.tab.bars||[]).some(b=>(b.notes||[]).some(n=>n.acc)));
   const near=(x,k)=>Math.abs(x-Math.round(x/k)*k)<0.02;
   const weight=(acc,beats,sig)=>{
@@ -3507,6 +3508,29 @@ function sndBuild(){
       if(b.sig) sigNow=b.sig;
       const j=jb[bi]||{};
       const chs=(j.chords&&j.chords.length)?j.chords:(j.grip?[{grip:j.grip,at:0}]:[]);
+      /* 前奏 / 间奏 / solo 的主音与伴奏（用户 2026-11-02：「和弦伴奏音音量都要比主音低，不然主音不突出」）：
+         没有歌词的小节里简谱就是吉他的旋律。和简谱同一拍位、音级一致的那个音（几根都对上取最高那根）= 主音，弹满稍加重；
+         其余（按和弦指法弹的 × 分解、琶音、拖音期间的伴奏）= 伴奏，减半。整小节一个都对不上（识别偏了）就退回下面「最高弦」的老规则 */
+      /* 「无词」按位置算：小节里第一个带词的音之前都算前奏（有没有人告诉你的 E 小节末尾是弱起「当」，整小节判有词就漏了前面的伴奏） */
+      const melAt=new Map(); let solo=false, soloHit=false, lyPos=1e9;
+      if(kp0!=null && !(tonly&&hasAcc) && j.notes && j.notes.length){
+        let pa=0;
+        for(const q of j.notes){ if(((q.ly0||'')+(q.ly1||'')).trim()){ lyPos=pa; break; } pa+=+q.dur||0; }
+        pa=0;
+        j.notes.forEach(q=>{ if(pa>=lyPos-1e-6) return; const mm=/^([#♯b♭]?)([1-7])$/.exec(String(q.deg||''));
+          if(mm){ const sh=mm[1]==='#'||mm[1]==='♯'?1:(mm[1]?-1:0); melAt.set(Math.round(pa*48), (kp0+DEGS[+mm[2]]+sh+120)%12); }
+          pa+=+q.dur||0; });
+        /* 整小节无词且简谱有旋律音 = 前奏/间奏；词从小节中间才起（弱起）时，词前那段只有前一小节也是前奏才算——
+           唱段里长音拖着、句间休止的小节也没有词，不能当前奏把伴奏压轻 */
+        solo = lyPos>=1e8 ? melAt.size>0 : (lyPos>=(+j.beats||b.beats||4)*0.5-1e-6 && prevSolo);   /* 词前至少半小节：「0 忽然…」只空半拍就开唱，强拍低音不能压 */
+        if(solo){ let pa2=0;
+          if(!melAt.size) soloHit=true;                  /* 词前只有休止（弱起前那段）：全是伴奏 */
+          for(const q of (b.notes||[])){ const pc=melAt.get(Math.round(pa2*48)); pa2+=q.dur||0; if(pc==null) continue;
+            for(const h of (q.hit||[])){ let f=isdig(h.f)?+h.f:null;
+              if(h.f==='x'){ let g0=grip; for(const c of chs) if((+c.at||0)<=pa2-(q.dur||0)+1e-6 && c.grip) g0=c.grip; const g=g0&&g0[5-h.s]; if(g!=null&&isdig(g)) f=+g; }
+              if(f!=null && h.s>=0 && h.s<=5 && [0,capC].some(c=>(S_MIDI[h.s]+f+c)%12===pc)) soloHit=true; } } }
+      }
+      prevSolo = lyPos>=1e8 ? solo : false;
       let ci=0, acc=0;
       (b.notes||[]).forEach((n,ni)=>{
         while(ci<chs.length && (+chs[ci].at||0)<=acc+1e-6){ if(chs[ci].grip) grip=chs[ci].grip; ci++; }
@@ -3528,7 +3552,14 @@ function sndBuild(){
         /* 旋律 / 伴奏（用户 2026-11-01：「前奏 solo 的旋律音也要跟和弦里的伴奏音拉开差距」）：不是扫弦、同一时刻拨好几根弦时，
            最高的那根（弦号最小）是旋律，力度加一点；其余是伴奏，减半。有着重号的指弹行已经按着重号分过，不再分 */
         const mains=digs.filter(h=>isdig(h.f)&&!h.off&&!h.paren);
-        const topS=(!arrow && !roll && mains.length>=2 && !(tonly&&hasAcc)) ? Math.min(...mains.map(h=>h.s)) : null;
+        let topS=(!arrow && !roll && mains.length>=2 && !(tonly&&hasAcc)) ? Math.min(...mains.map(h=>h.s)) : null;
+        let melS=null;                                   /* 无词小节：本拍和简谱对上的最高弦（-1 = 本拍没有主音，全是伴奏） */
+        if(solo && soloHit && acc-(n.dur||0)<lyPos-1e-6){
+          const pc=melAt.get(Math.round((acc-(n.dur||0))*48)); melS=-1;
+          if(pc!=null) for(const h of digs){ if(h.off||h.paren) continue;
+            let f=isdig(h.f)?+h.f:null; if(h.f==='x'){ const g=grip&&grip[5-h.s]; if(g!=null&&isdig(g)) f=+g; }
+            if(f!=null && [0,capC].some(c=>(S_MIDI[h.s]+f+c)%12===pc) && (melS<0 || h.s<melS)) melS=h.s; }
+          topS=null; }
         for(const h of digs){ if(!isdig(h.f)) continue; if(h.off<0) pre[h.s]={f:+h.f,k:h.lk||'H'}; else if(!(h.off>0)) main[h.s]=+h.f; }
         for(const h of digs){
           const key=bi+','+ni+','+h.s;
@@ -3537,7 +3568,8 @@ function sndBuild(){
           if(isdig(h.f)) fret=+h.f;
           else if(h.f==='x'){ const g=grip&&grip[5-h.s]; if(g!=null&&isdig(g)) fret=+g; }
           if(fret!=null) lastF[h.s]=fret;
-          const e={u, uo:0, dts:0, s:h.s, fret, vel: topS==null ? vel : (h.s===topS ? Math.min(1.0, vel+0.12) : vel*0.5)};
+          const e={u, uo:0, dts:0, s:h.s, fret, vel: melS!=null ? (h.s===melS ? Math.min(1.0, vel+0.12) : vel*0.5)
+                                                     : topS==null ? vel : (h.s===topS ? Math.min(1.0, vel+0.12) : vel*0.5)};
           const lg=lega.get(key);
           if(h.off<0){ e.dts=-0.07; e.vel*=0.6; }      /* 前倚音：提前一点、轻 */
           else if(h.off>0){ e.uo=du*0.5; e.vel*=0.6;   /* 同一音内右侧的落音：半个时值后，击/勾/滑过去 */
@@ -3549,7 +3581,7 @@ function sndBuild(){
         }
         if((arrow||roll) && !hs.length && !tied.has(bi+','+ni+',-1')){   /* 空箭头 / 空琶音（波浪线旁边没写数字）：按当前和弦扫；没有和弦图就扫各弦最近按过的品位；延音线连过来的（成都末小节第二个琶音，弦记 -1）不再扫 */
           const s0=arrow?Math.max(0,Math.round(+arrow.a||0)):0, s1=arrow?Math.min(5,Math.round(arrow.b!=null?+arrow.b:5)):5;
-          for(let s=s0;s<=s1;s++){ const g=grip?grip[5-s]:lastF[s]; if(g!=null&&isdig(g)) hs.push({u, uo:0, dts:0, s, fret:+g, vel:vel*0.8}); }
+          for(let s=s0;s<=s1;s++){ const g=grip?grip[5-s]:lastF[s]; if(g!=null&&isdig(g)) hs.push({u, uo:0, dts:0, s, fret:+g, vel:vel*(melS!=null?0.5:0.8)}); }
         }
         if(arrow||roll){
           const bassFirst = !(arrow && arrow.f==='down');
