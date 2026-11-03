@@ -5283,9 +5283,11 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     for (const k in vr.imgs) { G.__SETIMG(k, vr.imgs[k]); delete B.VEC[k]; delete B.VBOX[k]; }
     for (const k of Object.keys(cur)) delete cur[k];        /* 原地替换：曲库列表、SONGS 里都是同一个对象 */
     Object.assign(cur, vr.song, keep);
-    const u = B.pos;
+    const u = B.pos, was = B.playing;
+    if (was) B.stop();
     B.open_(cur); B.buildPlay();
     try { B.seek(Math.min(u, B.TOT)); } catch (e) { }
+    if (was) $('play').click();             /* 边播边改：重排后从原处接着放，改动马上听得到 */
     if (!noSave) save();
     ED.paint(); requestAnimationFrame(() => requestAnimationFrame(() => ED.paint()));
   }
@@ -5310,7 +5312,7 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
      另有空位格 rect.ed-c：t,行,小节,音,弦（六线谱没打的弦，点了加 ×）、l,行,小节,音,段（还没字的音，点了写字）。
      点中 → 红色高亮 + 浮动工具条（按类型给操作）；× / 品位、和弦、歌词可以按住拖到别的位置（吸附到弦、音、拍上）。 */
   const $ = id => document.getElementById(id);
-  function msg(t, bad) { ED.lastMsg = [t || '', !!bad]; const m = $('edMsg'); if (m) { m.textContent = t || ''; m.classList.toggle('bad', !!bad); } const b = $('edBarMsg'); if (b) { b.textContent = t || ''; b.classList.toggle('bad', !!bad); } }
+  function msg(t, bad) { const m = $('edMsg'); if (m) { m.textContent = t || ''; m.classList.toggle('bad', !!bad); } }
   const R = sr => S.score.rows[sr];
   const barNo = (sr, bi) => { let n = 0; for (let r = 0; r < sr; r++) n += R(r).jp.bars.length; return n + bi + 1; };
   const jpBar = (sr, bi) => (R(sr) && R(sr).jp.bars[bi]) || null;
@@ -5497,11 +5499,12 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
       T_.hint = '改完按回车'; }
     return T_;
   }
+  /* 选中元素的操作都放在右侧固定面板的「选中」页（用户 2026-11-03：「不要紧挨着，影响观看和操作，你固定在右边。可以做成 Tab 切换的样子」） */
   function showBar() {
-    let bar = $('edBar'); if (bar) bar.remove();
-    if (!ED.on || !ED.selK) return;
-    const el = elOf(ED.selK, ED.strip); if (!el) return;
-    const T_ = tools(ED.selK); bar = document.createElement('div'); bar.id = 'edBar';
+    const bar = $('edBar'); if (!bar) return;
+    bar.textContent = '';
+    if (!ED.on || !ED.selK || !els(ED.selK).length) { const e = document.createElement('div'); e.className = 'ebh empty'; e.textContent = '在谱面上点任何东西：×、品位、简谱、歌词、和弦、连线、小节线、房子、标题……选中后这里出操作。'; bar.appendChild(e); return; }
+    const T_ = tools(ED.selK);
     const hd = document.createElement('div'); hd.className = 'ebt'; hd.textContent = T_.title || KIND[P(ED.selK).t] || ''; bar.appendChild(hd);
     let line = document.createElement('div'); line.className = 'ebl'; bar.appendChild(line);
     T_.forEach(it => {
@@ -5512,13 +5515,6 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
       const b = document.createElement('button'); b.type = 'button'; b.textContent = it.t; if (it.tip) b.title = it.tip; if (it.cls) b.className = it.cls; b.onclick = e => { e.stopPropagation(); it.f(); }; line.appendChild(b);
     });
     if (T_.hint) { const h = document.createElement('div'); h.className = 'ebh'; h.textContent = T_.hint; bar.appendChild(h); }
-    const m = document.createElement('div'); m.id = 'edBarMsg'; if (ED.lastMsg) { m.textContent = ED.lastMsg[0]; m.classList.toggle('bad', ED.lastMsg[1]); } bar.appendChild(m);
-    B.paper.appendChild(bar);
-    const bx = boxOf(el), pw = B.paper.scrollWidth, bw = bar.offsetWidth;
-    bar.style.left = Math.max(4, Math.min(pw - bw - 4, bx.l + bx.w / 2 - bw / 2)) + 'px';
-    const vis = B.paper.getBoundingClientRect(), below = bx.t + bx.h + 8;
-    const roomBelow = (vis.top + below - B.paper.scrollTop + bar.offsetHeight) < innerHeight - 70;
-    bar.style.top = (roomBelow ? below : Math.max(0, bx.t - bar.offsetHeight - 8)) + 'px';
   }
   function askChord(sr, bi, at) {
     const bar = $('edBar'); if (!bar) return;
@@ -5586,19 +5582,20 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     const p = P(h.k);
     if (p.t === 't') { const [sr, bi, ni, s] = p.a; ED.strip = h.strip; OPS.thAdd(sr, bi, ni, s); return; }
     if (p.t === 'l') { const [sr, bi, ni, v] = p.a; lyOpen({ sr, bi, ni, v, strip: h.strip }); return; }
-    ED.selK = h.k; ED.strip = h.strip; ED.lastMsg = null;
+    ED.selK = h.k; ED.strip = h.strip; ED.tab('el');
     if (typeof p.a[0] === 'number' && p.a.length >= 2 && p.t !== 'ts' && p.t !== 'js' && p.t !== 'bl' && p.t !== 'hs') ED.sel = { sr: p.a[0], bi: p.a[1] };
     else if (p.t === 'bl') ED.sel = { sr: p.a[0], bi: Math.max(0, Math.min(R(p.a[0]).jp.bars.length - 1, p.a[1] - (p.a[1] > 0 ? 1 : 0))) };
     else if (p.t === 'hs') ED.sel = { sr: p.a[0], bi: R(p.a[0]).houses[p.a[1]].b0 };
     ED.paint(); fill(); msg('');
   }
+  const h0strip = e => { const s = e.target && e.target.closest && e.target.closest('.prow'); return s ? B.prows.indexOf(s) : -1; };
   let drag = null;
   const DRAG = { th: ['t', 'th', 'tn'], jl: ['jn', 'jl', 'l'], ch: ['jn', 'jl', 'l', 'tn', 't', 'th'] };
   function dropTarget(x, y) { return drag ? hitAt(x, y, DRAG[drag.t]) : null; }
   function onDown(e) {
     if (e.button !== 0) return;
     const h = hitAt(e.clientX, e.clientY);
-    if (!h) { const hits = B.barHits(e); lyClose(); if (hits.length && hits[0].sr != null) { ED.selK = null; ED.sel = { sr: hits[0].sr, bi: hits[0].bi }; ED.paint(); fill(); msg('选中第 ' + barNo(hits[0].sr, hits[0].bi) + ' 小节'); } else { ED.selK = null; ED.paint(); } return; }
+    if (!h) { const hits = B.barHits(e); lyClose(); if (hits.length && hits[0].sr != null) { ED.selK = null; ED.sel = { sr: hits[0].sr, bi: hits[0].bi }; ED.strip = h0strip(e); ED.paint(); fill(); ED.tab('bar'); msg('选中第 ' + barNo(hits[0].sr, hits[0].bi) + ' 小节'); } else { ED.selK = null; ED.paint(); } return; }
     const t = P(h.k).t;
     if (DRAG[t]) drag = { t, k: h.k, strip: h.strip, x: e.clientX, y: e.clientY, on: false };
     choose(h);
@@ -5641,7 +5638,8 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) { eat(); undo(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'Escape') { eat(); ED.selK = null; ED.paint(); fill(); return; }
-    if (!ED.selK) { if (e.key === ' ') eat(); return; }
+    if (e.key === ' ') { eat(); playFromSel(); return; }
+    if (!ED.selK) return;
     const { t, a } = P(ED.selK);
     if (e.key === 'Delete' || e.key === 'Backspace') {
       eat(); const del = { th: OPS.thDel, tn: OPS.tnDel, ta: OPS.taDel, tt: OPS.ttDel, ts: OPS.tsDel, tb: OPS.tbDel, jl: OPS.jlDel, jg: OPS.jgDel, js: OPS.jsDel, ch: OPS.chDel, hs: OPS.hsDel }[t];
@@ -5663,7 +5661,18 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
       if (e.key === 'Enter') { eat(); lyOpen({ sr: a[0], bi: a[1], ni: a[2], v: 0, strip: ED.strip }); return; } }
     if (t === 'jl' && e.key === 'Enter') { eat(); lyOpen({ sr: a[0], bi: a[1], ni: a[2], v: a[3], strip: ED.strip }); return; }
     if ((t === 'jn' || t === 'tn' || t === 'jl') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { eat(); step(e.key === 'ArrowRight' ? 1 : -1); return; }
-    if (e.key === ' ') eat();
+  }
+  /* 编辑时也能播（用户 2026-11-03：「编辑模式下，是不能点击播放的」）：空格 / 面板上的 ▶ —— 在播就停；没在播、选着东西就从那一小节起，否则从当前位置接着放 */
+  function barUnit(sr, bi, strip) {
+    let cum = 0, hit = null;
+    B.PL.forEach(m => { if (m.sr === sr && m.b0 <= bi && bi < m.b1 && (!hit || m.row === strip)) { let o = 0; for (let k = m.b0; k < bi; k++) o += m.bars[k - m.b0]; if (!hit || m.row === strip) hit = cum + o; }
+      cum += m.bars.reduce((a, b) => a + b, 0); });
+    return hit;
+  }
+  function playFromSel(fromSel) {
+    if (B.playing) { $('play').click(); return; }
+    if (ED.sel && (fromSel || ED.selK)) { const u = barUnit(ED.sel.sr, ED.sel.bi, ED.strip); if (u != null) B.seek(Math.max(u, 0.02)); }
+    $('play').click();
   }
   function step(d) {
     const { t, a } = P(ED.selK); const seq = [];
@@ -5688,11 +5697,12 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     document.querySelectorAll('.edsel').forEach(n => n.remove());
     document.querySelectorAll('.ed-on').forEach(n => n.classList.remove('ed-on'));
     ED.marks();
-    if (!ED.on) { const b = $('edBar'); if (b) b.remove(); lyClose(); return; }
+    if (!ED.on) { lyClose(); return; }
     if (ED.sel && B.PL.length) { const bb = barBox(ED.sel.sr, ED.sel.bi, ED.strip); if (bb) mark('edsel', bb); }
     if (ED.selK) { const all = els(ED.selK); if (!all.length) ED.selK = null; all.forEach(n => n.classList.add('ed-on')); }
     showBar();
   };
+  setInterval(() => { const b = $('edPlay'); if (b && ED.on) { const t = B.playing ? '❚❚' : '▶'; if (b.textContent !== t) b.textContent = t; } }, 300);
   ED.marks = function () {
     document.querySelectorAll('.edfill').forEach(n => n.remove());
     if (!B.S || !B.S.score || !B.PL.length) return;
@@ -5737,12 +5747,15 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
   function build() {
     if (ED.host) return;
     const h = document.createElement('div'); h.id = 'edpanel'; h.hidden = true;
-    h.innerHTML = '<div class="edhd"><b>编辑谱面</b><span id="edInfo"></span><button type="button" id="edMin" title="收起 / 展开">–</button><button type="button" id="edClose" title="退出编辑">✕</button></div>'
-      + '<div class="edbody"><div class="edhelp edtop">谱面上的东西都能点：点中变红、旁边出工具条（改 / 删 / 加）；×、品位、和弦、歌词可以<b>按住拖动</b>；六线谱空位点一下加 ×，没字的音下面点一下写歌词。Delete 删除，Ctrl/⌘+Z 撤销，Esc 取消选中</div>'
+    h.innerHTML = '<div class="edhd"><b>编辑谱面</b><span id="edInfo"></span><button type="button" id="edPlay" title="播放 / 暂停（空格）；选着东西时从那一小节起">▶</button><button type="button" id="edUndoTop" title="撤销（Ctrl/⌘+Z）">↶</button><button type="button" id="edMin" title="收起 / 展开">–</button><button type="button" id="edClose" title="退出编辑">✕</button></div>'
+      + '<div class="edtabs" role="tablist"><button type="button" data-tab="el" role="tab">选中</button><button type="button" data-tab="bar" role="tab">小节</button><button type="button" data-tab="song" role="tab">整首</button></div>'
+      + '<div class="edbody">'
+      + '<section data-pane="el"><div id="edBar"></div></section>'
+      + '<section data-pane="bar" hidden>'
       + '<div class="edrow"><span>鼓加花</span><div id="edDrum" class="seg"><button type="button" data-v="">自动</button><button type="button" data-v="fill">加花</button><button type="button" data-v="nofill">不加</button></div></div>'
       + '<div class="edrow"><span>房子</span><div id="edHouse" class="seg"><button type="button" data-v="">无</button><button type="button" data-v="1">①</button><button type="button" data-v="2">②</button><button type="button" data-v="3">③</button></div></div>'
-      + '<div class="edbtns"><button type="button" id="edUndo">撤销</button>'
-      + '<button type="button" id="edAddAfter">后面加小节</button><button type="button" id="edAddBefore">前面加小节</button><button type="button" id="edDel">删除小节</button><button type="button" id="edAddRow">下面加一行</button></div>'
+      + '<div class="edbtns"><button type="button" id="edPlayBar">▶ 从这小节播放</button></div>'
+      + '<div class="edbtns"><button type="button" id="edAddAfter">后面加小节</button><button type="button" id="edAddBefore">前面加小节</button><button type="button" id="edDel">删除小节</button><button type="button" id="edAddRow">下面加一行</button></div>'
       + '<details id="edText"><summary>整小节文本编辑（和弦、整小节简谱）</summary>'
       + '<label><span>和弦</span><input id="edChord" placeholder="C 或 C G 或 C@0 G@2" autocomplete="off" spellcheck="false"></label>'
       + '<label><span>简谱</span><input id="edJp" placeholder="1 2 3/ 5/ - 6\' [4]5 (1 2 3)" autocomplete="off" spellcheck="false"></label>'
@@ -5750,17 +5763,21 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
       + '<label><span>歌词 2</span><input id="edLy1" placeholder="第二段词（可空）" autocomplete="off" spellcheck="false"></label>'
       + '<div class="edbtns"><button type="button" id="edApply" class="pri">应用</button></div>'
       + '<div class="edhelp">写法：数字 0~7（0 休止）、- 延音、\' 高八度 , 低八度、. 附点、/ 减时线、#/b 升降、[4]5 倚音、(1 2 3) 三连音；和弦 C G 平分一小节，C@0 G@1.5 指定拍位</div></details>'
+      + '</section>'
+      + '<section data-pane="song" hidden><div id="edSong"></div>'
       + '<div class="edbtns"><button type="button" id="edExport">导出 score.json</button><button type="button" id="edRevert">还原成文件那份</button></div>'
+      + '<div class="edhelp">操作：谱面上的东西都能点，选中变红，操作在「选中」页；×、品位、和弦、歌词可以按住拖动；六线谱空位点一下加 ×，没字的音下面点一下写歌词。<br>键盘：空格 播放 / 暂停，Delete 删除，Ctrl/⌘+Z 撤销，Esc 取消选中；选中 × 打数字改品位、↑↓ 换弦；选中简谱打 1~7 / 0 / -，↑↓ 八度，回车写歌词。<br>改动存在本机，导出后发给我就成正式版。</div>'
+      + '</section>'
       + '<div id="edMsg"></div></div>';
     document.body.appendChild(h); ED.host = h;
     $('edClose').onclick = () => ED.toggle(false);
-    $('edMin').onclick = () => h.classList.toggle('min');
-    const hd = h.querySelector('.edhd'); let dg = null;     /* 按住标题栏拖走面板 */
-    hd.addEventListener('pointerdown', e => { if (e.target.tagName === 'BUTTON') return; const r = h.getBoundingClientRect(); dg = { dx: e.clientX - r.left, dy: e.clientY - r.top }; hd.setPointerCapture(e.pointerId); });
-    hd.addEventListener('pointermove', e => { if (!dg) return; h.style.left = Math.max(0, Math.min(innerWidth - 80, e.clientX - dg.dx)) + 'px'; h.style.top = Math.max(0, Math.min(innerHeight - 40, e.clientY - dg.dy)) + 'px'; h.style.right = 'auto'; });
-    hd.addEventListener('pointerup', () => { dg = null; });
+    $('edMin').onclick = () => { h.classList.toggle('min'); document.body.classList.toggle('edmin', h.classList.contains('min')); };
+    $('edPlay').onclick = () => playFromSel();
+    $('edPlayBar').onclick = () => playFromSel(true);
+    $('edUndoTop').onclick = undo;
+    h.querySelectorAll('.edtabs button').forEach(b => b.onclick = () => ED.tab(b.dataset.tab));
+    ED.tab('el');
     $('edApply').onclick = apply;
-    $('edUndo').onclick = undo;
     h.querySelectorAll('#edDrum button').forEach(b => b.onclick = () => setDrum(b.dataset.v));
     h.querySelectorAll('#edHouse button').forEach(b => b.onclick = () => { if (!ED.sel) return; const r = R(ED.sel.sr), v = b.dataset.v;
       if (!v) { const i = (r.houses || []).findIndex(q => q.b0 <= ED.sel.bi && ED.sel.bi <= q.b1); if (i >= 0) OPS.hsDel([ED.sel.sr, i]); } else OPS.hsAdd(ED.sel.sr, ED.sel.bi, +v); });
@@ -5772,7 +5789,7 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     $('edRevert').onclick = () => { if (!confirm('丢掉本机对这首的全部改动，回到文件那份？')) return; localStorage.removeItem(KEY(S.id)); location.reload(); };
     ['edChord', 'edJp', 'edLy0', 'edLy1'].forEach(k => $(k).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } e.stopPropagation(); }));
     ['edChord', 'edJp', 'edLy0', 'edLy1'].forEach(k => $(k).addEventListener('keyup', e => e.stopPropagation()));
-    const mine = e => e.target && e.target.closest && e.target.closest('#edBar,#edLyIn');
+    const mine = e => e.target && e.target.closest && e.target.closest('#edLyIn');
     const eat = e => { if (!ED.on || mine(e)) return; e.stopPropagation(); e.preventDefault(); if (e.type === 'pointerdown') onDown(e); };
     B.stage.addEventListener('pointerdown', eat, true); B.stage.addEventListener('click', eat, true);
     B.stage.addEventListener('dblclick', e => { if (!ED.on || mine(e)) return; e.preventDefault(); e.stopPropagation(); const h2 = hitAt(e.clientX, e.clientY); if (h2) { const p = P(h2.k); if (p.t === 'jl' || p.t === 'jn') lyOpen({ sr: p.a[0], bi: p.a[1], ni: p.a[2], v: p.t === 'jl' ? p.a[3] : 0, strip: h2.strip }); } }, true);
@@ -5786,12 +5803,30 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     build();
     on = on == null ? !ED.on : !!on;
     if (on && !(B.S && B.S.score)) { B.say('只有矢量谱能编辑'); return; }
-    ED.on = on; ED.host.hidden = !on; document.body.classList.toggle('editing', on);
+    ED.on = on; ED.host.hidden = !on; dockH(); document.body.classList.toggle('editing', on); document.body.classList.toggle('edmin', on && ED.host.classList.contains('min'));
     const b = $('edBtn'); if (b) b.setAttribute('aria-pressed', String(on));
     ED.selK = null; lyClose();
-    if (on) { B.stop(); if (!ED.sel || !S.score.rows[ED.sel.sr]) ED.sel = { sr: 0, bi: 0 }; rebuild(true); fill(); B.say('谱面上的东西都能点、能拖'); }
+    if (on) { if (!ED.sel || !S.score.rows[ED.sel.sr]) ED.sel = { sr: 0, bi: 0 }; rebuild(true); fill(); B.say('谱面上的东西都能点、能拖'); }
     else { rebuild(true); }
   };
+  /* 面板下沿让开底部播放条（播放条高度随屏宽变，手机上是两行） */
+  function dockH() { const d = $('dock'); if (d) document.documentElement.style.setProperty('--eddock', d.offsetHeight + 'px'); }
+  addEventListener('resize', dockH);
+  ED.tab = function (t) {
+    if (!ED.host) return; ED.curTab = t;
+    ED.host.querySelectorAll('.edtabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
+    ED.host.querySelectorAll('section[data-pane]').forEach(x => { x.hidden = x.dataset.pane !== t; });
+    if (t === 'song') songPane();
+  };
+  function songPane() {
+    const box = $('edSong'); if (!box) return; box.textContent = ''; const m = S.score.meta;
+    [['title', '歌名'], ['artist', '演唱'], ['lyricist', '作词'], ['composer', '作曲'], ['key', '调'], ['sig', '拍号'], ['capo', '变调夹']].forEach(([f, l]) => {
+      const lb = document.createElement('label'); const sp = document.createElement('span'); sp.textContent = l; const i = document.createElement('input'); i.value = m[f] || ''; i.spellcheck = false; i.autocomplete = 'off';
+      i.addEventListener('keydown', e => { e.stopPropagation(); if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Enter') { e.preventDefault(); const v = i.value.trim(); if (f === 'sig' && !/^\d+\/\d+$/.test(v)) { msg('拍号写成 4/4 这样', true); return; } if (v !== (m[f] || '')) { OPS.mtSet(f, v); ED.tab('song'); msg(l + '已改'); } } });
+      i.addEventListener('keyup', e => e.stopPropagation());
+      lb.appendChild(sp); lb.appendChild(i); box.appendChild(lb); });
+    const h = document.createElement('div'); h.className = 'edhelp'; h.textContent = '改完按回车'; box.appendChild(h);
+  }
   ED.hasEdit = id => { try { return !!localStorage.getItem(KEY(id)); } catch (e) { return false; } };
   /* 设置面板里加入口（矢量谱才有） */
   function mount() {
@@ -5808,22 +5843,27 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
   const css = document.createElement('style');
-  css.textContent = '#edpanel{position:fixed;right:12px;top:56px;width:min(360px,calc(100vw - 24px));max-height:calc(100vh - 80px);overflow:auto;z-index:60;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:10px 12px 8px;font-size:13px}'
-    + '#edpanel.min .edbody{display:none}#edpanel.min{width:auto}'
-    + '#edpanel .edhd{display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:move;touch-action:none;user-select:none}#edpanel .edhd span{flex:1;color:var(--muted);font-size:12px}#edpanel .edhd button{appearance:none;background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer;padding:0 2px}'
-    + '#edpanel label{display:flex;align-items:center;gap:8px;margin:5px 0}#edpanel label span,#edpanel .edrow>span{width:44px;color:var(--muted);flex:none}'
-    + '#edpanel .edrow{display:flex;align-items:center;gap:8px;margin-top:8px}'
+  css.textContent = '#edpanel{position:fixed;right:10px;top:56px;bottom:calc(var(--eddock,88px) + 10px);width:340px;max-width:calc(100vw - 20px);display:flex;flex-direction:column;z-index:60;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.16);font-size:13px}'
+    + '#edpanel.min{bottom:auto;width:auto}#edpanel.min .edtabs,#edpanel.min .edbody{display:none}'
+    + 'body.editing:not(.edmin) #stage{padding-right:356px;box-sizing:border-box}'
+    + '@media (max-width:760px){#edpanel{left:8px;right:8px;width:auto;top:auto;height:44vh}#edpanel.min{height:auto;left:auto}body.editing:not(.edmin) #stage{padding-right:0;padding-bottom:calc(44vh + 12px)}}'
+    + '#edpanel .edhd{display:flex;align-items:center;gap:6px;padding:9px 12px 6px;user-select:none}#edpanel .edhd b{font-size:14px}#edpanel .edhd span{flex:1;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '#edpanel .edhd button{appearance:none;background:none;border:1px solid transparent;border-radius:6px;color:var(--ink);font-size:14px;cursor:pointer;padding:3px 7px}#edpanel .edhd button:hover{border-color:var(--line)}#edPlay{color:var(--accent)!important;font-weight:700}'
+    + '#edpanel .edtabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line)}#edpanel .edtabs button{appearance:none;background:none;border:0;border-bottom:2px solid transparent;padding:7px 12px;font:13px/1 inherit;color:var(--muted);cursor:pointer;margin-bottom:-1px}'
+    + '#edpanel .edtabs button[aria-selected="true"]{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}'
+    + '#edpanel .edbody{flex:1;overflow:auto;padding:10px 12px}'
+    + '#edpanel label{display:flex;align-items:center;gap:8px;margin:5px 0}#edpanel label span,#edpanel .edrow>span{width:48px;color:var(--muted);flex:none}'
+    + '#edpanel .edrow{display:flex;align-items:center;gap:8px;margin:4px 0 8px}'
     + '#edpanel input{flex:1;min-width:0;font:14px/1.4 var(--num),ui-monospace,Menlo,monospace;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink)}'
-    + '#edpanel .edbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}#edpanel .edbtns button,#edpanel .seg button{appearance:none;font:12px/1 inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}'
+    + '#edpanel .edbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}#edpanel button{font-family:inherit}#edpanel .edbtns button,#edpanel .seg button{appearance:none;font-size:12px;line-height:1;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}'
     + '#edpanel .seg{display:flex;gap:4px}#edpanel .seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}'
     + '#edpanel .edbtns button.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}'
-    + '#edpanel details{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}#edpanel summary{cursor:pointer;color:var(--muted);font-size:12px}'
-    + '#edMsg{min-height:16px;margin-top:6px;font-size:12px;color:var(--muted)}#edMsg.bad,#edBarMsg.bad{color:#c0392b}#edpanel .edhelp{margin-top:6px;font-size:11px;color:var(--muted);line-height:1.55}#edpanel .edhelp.edtop{margin:0 0 4px}'
-    + '#edBar{position:absolute;z-index:9;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 22px rgba(0,0,0,.2);padding:6px 8px;font:12px/1.3 PingFang SC,sans-serif;max-width:520px}'
-    + '#edBar .ebt{font-weight:600;margin:0 2px 4px;color:#d62828}#edBar .ebl{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0}#edBar .ebh{color:var(--muted);font-size:11px;margin-top:3px}#edBarMsg{font-size:11px;color:var(--muted);min-height:0}'
-    + '#edBar button{appearance:none;font:12px/1 inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}#edBar button:hover{border-color:var(--accent)}'
-    + '#edBar button.deg{min-width:26px;font-size:14px;font-weight:600}#edBar button.del{color:#c0392b;border-color:rgba(192,57,43,.4)}#edBar button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}'
-    + '#edBar input{font:13px/1.3 var(--num),ui-monospace,Menlo,monospace;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink)}#edBar input.ask{display:block;margin-top:5px}'
+    + '#edpanel details{margin-top:10px;border-top:1px dashed var(--line);padding-top:6px}#edpanel summary{cursor:pointer;color:var(--muted);font-size:12px}'
+    + '#edMsg{min-height:18px;margin-top:10px;padding-top:6px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}#edMsg:empty{border-top:0}#edMsg.bad{color:#c0392b}#edpanel .edhelp{margin-top:8px;font-size:11px;color:var(--muted);line-height:1.6}'
+    + '#edBar .ebt{font-weight:600;font-size:14px;margin:0 0 6px;color:#d62828}#edBar .ebl{display:flex;flex-wrap:wrap;gap:5px;margin:5px 0}#edBar .ebh{color:var(--muted);font-size:11px;margin-top:6px;line-height:1.6}#edBar .ebh.empty{font-size:12px;margin-top:2px}'
+    + '#edBar button{appearance:none;font-size:12px;line-height:1;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}#edBar button:hover{border-color:var(--accent)}'
+    + '#edBar button.deg{min-width:30px;font-size:15px;font-weight:600}#edBar button.del{color:#c0392b;border-color:rgba(192,57,43,.4)}#edBar button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}'
+    + '#edBar input{flex:none;font:13px/1.3 var(--num),ui-monospace,Menlo,monospace;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink)}#edBar input.ask{display:block;margin-top:6px}'
     + '.edsel{position:absolute;pointer-events:none;border:1.5px dashed var(--accent);border-radius:4px;box-sizing:border-box;z-index:5}'
     + '.edfill{position:absolute;pointer-events:none;z-index:4;font:600 12px/18px PingFang SC,sans-serif;text-align:center;color:#fff;background:var(--accent);border-radius:9px;opacity:.85}'
     + '.edfill.no{background:none;color:var(--muted);border:1px solid var(--muted);text-decoration:line-through;line-height:16px}'
