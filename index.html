@@ -152,14 +152,18 @@ let ORD=null, ORDTS=0, ordNote=false, LIST=SONGS.slice();
 
 /* ======== 栏目 ========
    song 弹唱谱 / solo 指弹谱 / image 图片谱，指弹谱再按 ★ 难度筛，弹唱谱按出处（src：Q02 / Q03 课件）分组——
-   没有出处的（弯弯的月亮）只在「全部」里（用户 2026-11-02）。STAR = 0 全部 / 数字 星级 / 字符串 出处。状态记在 #hash（可收藏、「← 曲库」能回到原栏目）和 localStorage。 */
+   不是 Q 系列的（没有 src 或 src 不是 Qnn，如弯弯的月亮）归「自收集」，排在 Q 系列前面（用户 2026-11-03）；各栏目后的数量带括号。STAR = 0 全部 / 数字 星级 / 字符串 出处。状态记在 #hash（可收藏、「← 曲库」能回到原栏目）和 localStorage。 */
 const CATS=[['song','弹唱谱'],['solo','指弹谱'],['image','图片谱']];
 const TKEY='gs2.tab';
 const catOf=x=>x.cat||'song';
+const SELF='自收集';
+const grpOf=x=>/^Q\d\d$/.test(x.src||'')?x.src:SELF;      /* 弹唱谱分组：Qnn 课件 / 自收集 */
+const parseKey=k=>{ try{ k=decodeURIComponent(k||''); }catch(e){}
+  return k.match(/^#?(song|solo|image)(?:-([1-5]|Q\d\d|自收集))?$/); };
 let TAB='song', STAR=0;
 (function(){
-  let m=(location.hash||'').match(/^#(song|solo|image)(?:-([1-5]|Q\d\d))?$/);
-  if(!m){ try{ m=(localStorage.getItem(TKEY)||'').match(/^(song|solo|image)(?:-([1-5]|Q\d\d))?$/); }catch(e){} }
+  let m=parseKey(location.hash);
+  if(!m){ try{ m=parseKey(localStorage.getItem(TKEY)); }catch(e){} }
   if(m){ TAB=m[1]; STAR=!m[2]?0:(/^\d$/.test(m[2])?+m[2]:m[2]); }
   if(!SONGS.some(x=>catOf(x)===TAB)){ const f=CATS.find(([c])=>SONGS.some(x=>catOf(x)===c)); if(f){ TAB=f[0]; STAR=0; } }
 })();
@@ -170,7 +174,7 @@ function setTab(t,st){
   try{ history.replaceState(null,'','#'+key); }catch(e){}
   render();
 }
-const inGrp=(x,st)=>!st || (typeof st==='number' ? x.star===st : x.src===st);
+const inGrp=(x,st)=>!st || (typeof st==='number' ? x.star===st : grpOf(x)===st);
 const view=()=>LIST.filter(x=>catOf(x)===TAB && inGrp(x,STAR));
 const sid6=id=>String(id||'').replace(/^sg-/,'').slice(0,6);
 
@@ -309,7 +313,7 @@ function endDrag(ev){
   }
 }
 const searching=()=>!!($('q').value||'').trim();
-addEventListener('hashchange',()=>{ const m=(location.hash||'').match(/^#(song|solo|image)(?:-([1-5]))?$/); if(m) setTab(m[1],+(m[2]||0)); });
+addEventListener('hashchange',()=>{ const m=parseKey(location.hash); if(m) setTab(m[1],!m[2]?0:(/^\d$/.test(m[2])?+m[2]:m[2])); });
 function ordDialog(){
   const code=ordCode();
   const v=prompt('当前顺序码（复制走，在别的设备上再粘回来）：\n\n'+code+
@@ -326,19 +330,19 @@ function renderTabs(){
   CATS.forEach(([c,name])=>{
     const n=SONGS.filter(x=>catOf(x)===c).length; if(!n) return;
     const b=el('button','tab',name); b.type='button'; b.setAttribute('role','tab');
-    b.setAttribute('aria-selected',String(c===TAB)); b.appendChild(el('span','k',String(n)));
+    b.setAttribute('aria-selected',String(c===TAB)); b.appendChild(el('span','k','('+n+')'));
     b.onclick=()=>setTab(c,0); T.appendChild(b);
   });
   const C=$('chips'); C.textContent='';
-  const srcs=[...new Set(SONGS.filter(x=>catOf(x)===TAB&&x.src).map(x=>x.src))].sort();
+  const srcs=TAB==='song'?[...new Set(SONGS.filter(x=>catOf(x)===TAB).map(grpOf))].sort((a,b)=>(a===SELF?-1:b===SELF?1:a<b?-1:a>b?1:0)):[];
   const stars=srcs.length?srcs:[...new Set(SONGS.filter(x=>catOf(x)===TAB&&x.star).map(x=>x.star))].sort();
   C.hidden=!stars.length;
   if(stars.length){
     const all=el('button','chip','全部'); all.type='button'; all.setAttribute('aria-selected',String(!STAR));
-    all.appendChild(el('span','k',String(SONGS.filter(x=>catOf(x)===TAB).length))); all.onclick=()=>setTab(TAB,0); C.appendChild(all);
+    all.appendChild(el('span','k','('+SONGS.filter(x=>catOf(x)===TAB).length+')')); all.onclick=()=>setTab(TAB,0); C.appendChild(all);
     stars.forEach(st=>{
       const b=el('button','chip',typeof st==='number'?'★'.repeat(st):st); b.type='button'; b.setAttribute('aria-selected',String(STAR===st));
-      b.appendChild(el('span','k',String(SONGS.filter(x=>catOf(x)===TAB&&inGrp(x,st)).length)));
+      b.appendChild(el('span','k','('+SONGS.filter(x=>catOf(x)===TAB&&inGrp(x,st)).length+')'));
       b.onclick=()=>setTab(TAB,st); C.appendChild(b);
     });
   }
