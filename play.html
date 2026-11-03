@@ -5633,9 +5633,11 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
   }
   function onKey(e) {
     if (!ED.on) return;
+    ED.kscroll = true;
     const tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT')) return;
     const eat = () => { e.preventDefault(); e.stopImmediatePropagation(); };
     if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) { eat(); undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) { eat(); zoom(e.key === '-' ? -1 : e.key === '0' ? 0 : 1); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'Escape') { eat(); ED.selK = null; ED.paint(); fill(); return; }
     if (e.key === ' ') { eat(); playFromSel(); return; }
@@ -5699,10 +5701,12 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     ED.marks();
     if (!ED.on) { lyClose(); return; }
     if (ED.sel && B.PL.length) { const bb = barBox(ED.sel.sr, ED.sel.bi, ED.strip); if (bb) mark('edsel', bb); }
-    if (ED.selK) { const all = els(ED.selK); if (!all.length) ED.selK = null; all.forEach(n => n.classList.add('ed-on')); }
+    if (ED.selK) { const all = els(ED.selK); if (!all.length) ED.selK = null; all.forEach(n => n.classList.add('ed-on'));
+      if (ED.kscroll) { const me = all.find(n => B.prows.indexOf(n.closest('.prow')) === ED.strip) || all[0]; hscroll(me); } }
+    ED.kscroll = false;                        /* 只有键盘走到屏外才横滚；鼠标点 / 拖时谱面不能在手底下挪 */
     showBar();
   };
-  setInterval(() => { const b = $('edPlay'); if (b && ED.on) { const t = B.playing ? '❚❚' : '▶'; if (b.textContent !== t) b.textContent = t; } }, 300);
+  setInterval(() => { const b = $('edPlay'); if (b && ED.on) { const t = B.playing ? '❚❚' : '▶'; if (b.textContent !== t) b.textContent = t; if (B.playing) hscroll($('cue'), 120); } }, 300);
   ED.marks = function () {
     document.querySelectorAll('.edfill').forEach(n => n.remove());
     if (!B.S || !B.S.score || !B.PL.length) return;
@@ -5748,7 +5752,7 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     if (ED.host) return;
     const h = document.createElement('div'); h.id = 'edpanel'; h.hidden = true;
     h.innerHTML = '<div class="edhd"><b>编辑谱面</b><span id="edInfo"></span><button type="button" id="edPlay" title="播放 / 暂停（空格）；选着东西时从那一小节起">▶</button><button type="button" id="edUndoTop" title="撤销（Ctrl/⌘+Z）">↶</button><button type="button" id="edMin" title="收起 / 展开">–</button><button type="button" id="edClose" title="退出编辑">✕</button></div>'
-      + '<div class="edtabs" role="tablist"><button type="button" data-tab="el" role="tab">选中</button><button type="button" data-tab="bar" role="tab">小节</button><button type="button" data-tab="song" role="tab">整首</button></div>'
+      + '<div class="edtabs" role="tablist"><button type="button" data-tab="el" role="tab">选中</button><button type="button" data-tab="bar" role="tab">小节</button><button type="button" data-tab="song" role="tab">整首</button><i></i><span class="edz"><button type="button" id="edZo" title="谱面缩小（Ctrl/⌘ −）">−</button><button type="button" id="edZv" title="谱面大小；点一下回到 150%">150%</button><button type="button" id="edZi" title="谱面放大（Ctrl/⌘ +）">+</button></span></div>'
       + '<div class="edbody">'
       + '<section data-pane="el"><div id="edBar"></div></section>'
       + '<section data-pane="bar" hidden>'
@@ -5771,11 +5775,12 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
       + '<div id="edMsg"></div></div>';
     document.body.appendChild(h); ED.host = h;
     $('edClose').onclick = () => ED.toggle(false);
-    $('edMin').onclick = () => { h.classList.toggle('min'); document.body.classList.toggle('edmin', h.classList.contains('min')); };
+    $('edMin').onclick = () => { h.classList.toggle('min'); document.body.classList.toggle('edmin', h.classList.contains('min')); relayout(); };
     $('edPlay').onclick = () => playFromSel();
+    $('edZo').onclick = () => zoom(-1); $('edZi').onclick = () => zoom(1); $('edZv').onclick = () => zoom(0);
     $('edPlayBar').onclick = () => playFromSel(true);
     $('edUndoTop').onclick = undo;
-    h.querySelectorAll('.edtabs button').forEach(b => b.onclick = () => ED.tab(b.dataset.tab));
+    h.querySelectorAll('.edtabs button[data-tab]').forEach(b => b.onclick = () => ED.tab(b.dataset.tab));
     ED.tab('el');
     $('edApply').onclick = apply;
     h.querySelectorAll('#edDrum button').forEach(b => b.onclick = () => setDrum(b.dataset.v));
@@ -5803,18 +5808,38 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     build();
     on = on == null ? !ED.on : !!on;
     if (on && !(B.S && B.S.score)) { B.say('只有矢量谱能编辑'); return; }
-    ED.on = on; ED.host.hidden = !on; dockH(); document.body.classList.toggle('editing', on); document.body.classList.toggle('edmin', on && ED.host.classList.contains('min'));
+    ED.on = on; ED.host.hidden = !on; dockH(); setTimeout(() => on ? zoom(null, true) : relayout(), 0); document.body.classList.toggle('editing', on); document.body.classList.toggle('edmin', on && ED.host.classList.contains('min'));
     const b = $('edBtn'); if (b) b.setAttribute('aria-pressed', String(on));
     ED.selK = null; lyClose();
     if (on) { if (!ED.sel || !S.score.rows[ED.sel.sr]) ED.sel = { sr: 0, bi: 0 }; rebuild(true); fill(); B.say('谱面上的东西都能点、能拖'); }
     else { rebuild(true); }
   };
+  /* 编辑时谱面放大（用户 2026-11-03：「左边的谱面需要放大，要不然不方便操作」）：
+     谱面区收到面板左边，谱纸宽 = 这块宽 × 倍数（默认 150%，− / + 按档 100%~250%），超宽就左右滚，选中的东西和播放游标自动横向滚进来；记在本机 gs.edz */
+  const ZS = [1, 1.25, 1.5, 1.75, 2, 2.5], Z0 = 2;
+  let ZI = ZS.indexOf(+localStorage.getItem('gs.edz')); if (ZI < 0) ZI = Z0;
+  function zoom(d, quiet) {
+    if (d) ZI = Math.max(0, Math.min(ZS.length - 1, ZI + d)); else if (d === 0) ZI = Z0;
+    const z = ZS[ZI]; document.documentElement.style.setProperty('--edz', z); try { localStorage.setItem('gs.edz', z); } catch (e) { }
+    const v = $('edZv'); if (v) v.textContent = Math.round(z * 100) + '%';
+    relayout(); if (!quiet) msg('谱面 ' + Math.round(z * 100) + '%');
+  }
+  function hscroll(el, pad) {
+    const st = B.stage; if (!el || st.scrollWidth <= st.clientWidth + 2) return;
+    const a = el.getBoundingClientRect(), r = st.getBoundingClientRect(), m = pad == null ? 60 : pad;
+    if (a.left < r.left + m) st.scrollLeft -= (r.left + m - a.left); else if (a.right > r.right - m) st.scrollLeft += (a.right - (r.right - m));
+  }
+  ED.hscroll = hscroll;
+  function relayout() {                        /* 宽度变了让播放器重排一遍（游标、高亮、点选位置都跟着走），再把选框画回去 */
+    dispatchEvent(new Event('resize'));
+    requestAnimationFrame(() => { if (ED.on) ED.paint(); });
+  }
   /* 面板下沿让开底部播放条（播放条高度随屏宽变，手机上是两行） */
   function dockH() { const d = $('dock'); if (d) document.documentElement.style.setProperty('--eddock', d.offsetHeight + 'px'); }
   addEventListener('resize', dockH);
   ED.tab = function (t) {
     if (!ED.host) return; ED.curTab = t;
-    ED.host.querySelectorAll('.edtabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
+    ED.host.querySelectorAll('.edtabs button[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
     ED.host.querySelectorAll('section[data-pane]').forEach(x => { x.hidden = x.dataset.pane !== t; });
     if (t === 'song') songPane();
   };
@@ -5845,12 +5870,14 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
   const css = document.createElement('style');
   css.textContent = '#edpanel{position:fixed;right:10px;top:56px;bottom:calc(var(--eddock,88px) + 10px);width:340px;max-width:calc(100vw - 20px);display:flex;flex-direction:column;z-index:60;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.16);font-size:13px}'
     + '#edpanel.min{bottom:auto;width:auto}#edpanel.min .edtabs,#edpanel.min .edbody{display:none}'
-    + 'body.editing:not(.edmin) #stage{padding-right:356px;box-sizing:border-box}'
-    + '@media (max-width:760px){#edpanel{left:8px;right:8px;width:auto;top:auto;height:44vh}#edpanel.min{height:auto;left:auto}body.editing:not(.edmin) #stage{padding-right:0;padding-bottom:calc(44vh + 12px)}}'
+    + 'body.editing:not(.edmin) #stage{right:356px}'
+    + 'body.editing #paper{width:calc(100% * var(--edz,1))!important;max-width:none!important}body.editing #stage{overflow-x:auto}'
+    + '#edpanel .edz #edZv{font-size:12px;min-width:44px;color:var(--muted)}'
+    + '@media (max-width:760px){#edpanel{left:8px;right:8px;width:auto;top:auto;height:44vh}#edpanel.min{height:auto;left:auto}body.editing:not(.edmin) #stage{right:0;bottom:calc(44vh + 12px)}}'
     + '#edpanel .edhd{display:flex;align-items:center;gap:6px;padding:9px 12px 6px;user-select:none}#edpanel .edhd b{font-size:14px}#edpanel .edhd span{flex:1;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
     + '#edpanel .edhd button{appearance:none;background:none;border:1px solid transparent;border-radius:6px;color:var(--ink);font-size:14px;cursor:pointer;padding:3px 7px}#edpanel .edhd button:hover{border-color:var(--line)}#edPlay{color:var(--accent)!important;font-weight:700}'
     + '#edpanel .edtabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line)}#edpanel .edtabs button{appearance:none;background:none;border:0;border-bottom:2px solid transparent;padding:7px 12px;font:13px/1 inherit;color:var(--muted);cursor:pointer;margin-bottom:-1px}'
-    + '#edpanel .edtabs button[aria-selected="true"]{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}'
+    + '#edpanel .edtabs i{flex:1}#edpanel .edz{display:flex;align-items:center}#edpanel .edz button{margin:0;padding:4px 7px;border:1px solid transparent;border-radius:6px;color:var(--ink);font-size:15px}#edpanel .edz button:hover{border-color:var(--line)}#edpanel .edtabs button[aria-selected="true"]{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}'
     + '#edpanel .edbody{flex:1;overflow:auto;padding:10px 12px}'
     + '#edpanel label{display:flex;align-items:center;gap:8px;margin:5px 0}#edpanel label span,#edpanel .edrow>span{width:48px;color:var(--muted);flex:none}'
     + '#edpanel .edrow{display:flex;align-items:center;gap:8px;margin:4px 0 8px}'
