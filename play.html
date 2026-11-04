@@ -5288,7 +5288,7 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
     B.open_(cur); B.buildPlay();
     try { B.seek(Math.min(u, B.TOT)); } catch (e) { }
     if (was) $('play').click();             /* 边播边改：重排后从原处接着放，改动马上听得到 */
-    if (!noSave) save();
+    if (!noSave) { save(); ED.dirty = true; if (ED.onDirty) ED.onDirty(); }
     ED.paint(); requestAnimationFrame(() => requestAnimationFrame(() => ED.paint()));
   }
   function save() {
@@ -5852,6 +5852,7 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
       lb.appendChild(sp); lb.appendChild(i); box.appendChild(lb); });
     const h = document.createElement('div'); h.className = 'edhelp'; h.textContent = '改完按回车'; box.appendChild(h);
   }
+  ED.score = () => S.score; ED.sid = () => S.id; ED.KEY = KEY; ED.zoom = zoom; ED.undoOne = () => undo();
   ED.hasEdit = id => { try { return !!localStorage.getItem(KEY(id)); } catch (e) { return false; } };
   /* 设置面板里加入口（矢量谱才有） */
   function mount() {
@@ -5904,6 +5905,214 @@ ${so?so.css:''}</style></head><body>${so?so.defs:''}<div class="bar">${chords?'<
   document.head.appendChild(css);
   G.__ED = ED;
   ED._t = { parseBar, serBar, gripFor, applyChords, applyLy, serLy, serChords, insertBar, deleteBar, addRow, select, apply, rebuild, fill, exportJson, setDrum, OPS, slots, hitAt, P };
+})(window);
+
+/* VectorTAB 编辑器·桌面版（2026-11-04，用户：「干脆做一个桌面版吉他谱编辑器」「生成的谱面文件，跟网页版一致，这样可以在网页播放」
+   「需要具备网页版的所有功能。app负责制作，当然也能播放。网页负责渲染和播放，一处制作，处处使用」）。
+   只在 play.html?…&desk=1 且本机后端（scripts/desk_server.py）在时启用；网页版这段什么都不做。
+   原生壳（desk/VectorTAB.swift）的 WKWebView 打开它：播放器 / 渲染器 / 编辑器都是网页版同一份，这里只加「制作」那一层：
+     左边曲库（搜索、新建）、保存进曲库（⌘S，写 songs/<id>/song.json——网页版读的就是它）、导入 score.json、另存 score.json、发布到网页（git push）、未保存提示。
+   和原生壳的约定：JS → 壳  webkit.messageHandlers.vt.postMessage({cmd:'dirty'|'title'|'saveAs'|'open'|'reveal', …})
+                   壳 → JS  VTDesk.cmd('save'|'new'|'open'|'saveAs'|'publish'|'undo'|'zoomIn'|'zoomOut'|'zoom0'|'play'|'edit'|'reveal'|'find')、
+                             VTDesk.importText(text, 文件名)、VTDesk.isDirty() */
+(function (G) {
+  'use strict';
+  if (!/[?&]desk=1\b/.test(location.search)) return;
+  const $ = id => document.getElementById(id);
+  const ED = () => G.__ED;
+  const native = (o) => { try { G.webkit.messageHandlers.vt.postMessage(o); return true; } catch (e) { return false; } };
+  const D = { site: '', list: [], dirty: false, busy: false };
+  G.VTDesk = D;
+
+  function api(path, body) {
+    return fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VT': '1' }, body: JSON.stringify(body) })
+      .then(r => r.json());
+  }
+  function toast(t, bad) {
+    let e = $('dkToast'); if (!e) { e = document.createElement('div'); e.id = 'dkToast'; document.body.appendChild(e); }
+    e.textContent = t; e.className = bad ? 'bad' : ''; e.style.opacity = '1';
+    clearTimeout(toast.t); toast.t = setTimeout(() => { e.style.opacity = '0'; }, bad ? 6000 : 2600);
+  }
+  const curId = () => { const m = /[?&]id=(sg-[0-9a-f]+)/.exec(location.search); return m ? m[1] : ''; };
+  function setDirty(v) {
+    D.dirty = !!v;
+    const t = (D.dirty ? '● ' : '') + (document.title.replace(/^● /, ''));
+    if (document.title !== t) document.title = t;
+    const b = $('dkSave'); if (b) { b.classList.toggle('dirty', D.dirty); b.textContent = D.dirty ? '保存 ●' : '已保存'; }
+    native({ cmd: 'dirty', v: D.dirty });
+  }
+  D.isDirty = () => D.dirty;
+  D.saveP = () => save();                       /* 原生壳退出前「保存并退出」用：callAsyncJavaScript 等它存完 */
+
+  /* ---------- 存 / 新建 / 导入 / 另存 / 发布 ---------- */
+  function save() {
+    const ed = ED(); if (!ed || !ed.score || !ed.score()) { toast('图片谱不能编辑，也不用保存'); return Promise.resolve(false); }
+    if (D.busy) return Promise.resolve(false); D.busy = true;
+    return api('/api/save', { id: ed.sid(), score: ed.score() }).then(r => {
+      D.busy = false;
+      if (!r.ok) { toast(r.msg || '没存上', true); return false; }
+      try { localStorage.removeItem(ed.KEY(ed.sid())); } catch (e) { }   /* 文件就是最新的了，本机草稿不再盖它 */
+      ed.dirty = false; setDirty(false); toast(r.msg + '（网页版要「发布」后才看得到）'); refresh(); return true;
+    }).catch(e => { D.busy = false; toast('没存上：' + e, true); return false; });
+  }
+  function go(id) {
+    if (!id || id === curId()) return;
+    if (D.dirty && !confirm('这首的改动还没保存，直接换歌？\n（改动会留在本机草稿里，下次打开这首还在）')) return;
+    api('/api/state', { last: id }); D.leaving = true;
+    location.href = 'play.html?id=' + id + '&desk=1';
+  }
+  function saveAs() {
+    const ed = ED(); if (!ed || !ed.score || !ed.score()) { toast('图片谱没有 score.json', true); return; }
+    const name = ((ed.score().meta || {}).title || 'score') + '-score.json', json = JSON.stringify(ed.score(), null, 1);
+    if (native({ cmd: 'saveAs', name, json })) return;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
+  }
+  D.importText = function (text, name) {
+    let sc; try { sc = JSON.parse(text); } catch (e) { toast('这个文件不是 JSON：' + (name || ''), true); return; }
+    if (sc && sc.score && sc.score.rows) sc = sc.score;                 /* 给的是整份 song.json 也收 */
+    api('/api/import', { score: sc }).then(r => { if (!r.ok) { toast(r.msg, true); return; } toast(r.msg); D.leaving = true; location.href = 'play.html?id=' + r.id + '&desk=1'; });
+  };
+  function openFile() {
+    if (native({ cmd: 'open' })) return;
+    const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json';
+    i.onchange = () => { const f = i.files[0]; if (f) f.text().then(t => D.importText(t, f.name)); }; i.click();
+  }
+  function publish() {
+    const run = () => {
+      const b = $('dkPub'); if (b) { b.disabled = true; b.textContent = '发布中…'; }
+      toast('正在推到 GitHub…');
+      api('/api/publish', {}).then(r => { toast(r.msg, !r.ok); }).catch(e => toast('发布失败：' + e, true))
+        .finally(() => { if (b) { b.disabled = false; b.textContent = '发布到网页'; } });
+    };
+    if (D.dirty) save().then(ok => ok && run()); else run();
+  }
+  function newDlg() {
+    let d = $('dkNew');
+    if (!d) {
+      d = document.createElement('div'); d.id = 'dkNew'; d.className = 'dkmask';
+      d.innerHTML = '<form class="dkdlg"><h3>新建谱子</h3>'
+        + '<label><span>歌名</span><input name="title" required placeholder="必填"></label>'
+        + '<label><span>演唱</span><input name="artist"></label>'
+        + '<label><span>调</span><select name="key">' + 'C D E F G A B Db Eb Gb Ab Bb'.split(' ').map(k => '<option>' + k + '</option>').join('') + '</select></label>'
+        + '<label><span>拍号</span><select name="sig"><option>4/4</option><option>3/4</option><option>6/8</option><option>2/4</option></select></label>'
+        + '<label><span>速度</span><input name="bpm" type="number" min="30" max="240" value="72"></label>'
+        + '<label><span>行数</span><input name="rows" type="number" min="1" max="60" value="8"></label>'
+        + '<label><span>每行小节</span><input name="per" type="number" min="1" max="8" value="4"></label>'
+        + '<label><span>栏目</span><select name="cat"><option value="song">弹唱谱</option><option value="solo">指弹谱</option></select></label>'
+        + '<p class="dkhint">生成空白的六线谱 + 简谱，每拍一个休止。点六线谱空位加 ×、选中打数字改品位；选中简谱打 1~7；双击音写歌词。行和小节以后都能加删。</p>'
+        + '<div class="dkbtns"><button type="button" value="cancel">取消</button><button type="submit" class="pri">新建</button></div></form>';
+      document.body.appendChild(d);
+      const f = d.querySelector('form');
+      d.querySelector('[value=cancel]').onclick = () => { d.hidden = true; };
+      d.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') d.hidden = true; }, true);
+      f.onsubmit = e => {
+        e.preventDefault();
+        const o = Object.fromEntries(new FormData(f).entries());
+        api('/api/new', o).then(r => { if (!r.ok) { toast(r.msg, true); return; } d.hidden = true; D.leaving = true; location.href = 'play.html?id=' + r.id + '&desk=1'; });
+      };
+    }
+    if (D.dirty && !confirm('这首的改动还没保存，先不管它、去新建？\n（改动留在本机草稿里）')) return;
+    d.hidden = false; setTimeout(() => d.querySelector('[name=title]').focus(), 30);
+  }
+
+  /* ---------- 左边曲库 ---------- */
+  const GRP = [['song', '弹唱谱'], ['solo', '指弹谱'], ['image', '图片谱（只能播放）']];
+  function side() {
+    const s = document.createElement('aside'); s.id = 'dkside';
+    s.innerHTML = '<div class="dkhd"><b>VectorTAB</b><span>编辑器</span></div>'
+      + '<div class="dkact"><button type="button" id="dkNewBtn" class="pri">＋ 新建</button><button type="button" id="dkOpenBtn" title="把一份 score.json 收进曲库">导入…</button></div>'
+      + '<input id="dkFind" placeholder="搜歌名" autocomplete="off" spellcheck="false">'
+      + '<div id="dkList"></div>'
+      + '<div class="dkfoot"><button type="button" id="dkSave" title="存进曲库（⌘S）">已保存</button><button type="button" id="dkEdit" title="编辑 / 只播放（⌘E）">编辑</button><button type="button" id="dkPub" title="推到 GitHub，网页版和手机上就能播（⇧⌘P）">发布到网页</button></div>';
+    document.body.appendChild(s);
+    $('dkNewBtn').onclick = newDlg; $('dkOpenBtn').onclick = openFile; $('dkSave').onclick = save; $('dkPub').onclick = publish;
+    $('dkEdit').onclick = () => { const ed = ED(); if (ed) ed.toggle(); syncEdit(); };
+    const f = $('dkFind'); f.addEventListener('input', paintList); f.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { f.value = ''; paintList(); f.blur(); } if (e.key === 'Enter') { const a = $('dkList').querySelector('a'); if (a) a.click(); } });
+    f.addEventListener('keyup', e => e.stopPropagation());
+  }
+  function paintList() {
+    const box = $('dkList'); if (!box) return; const q = ($('dkFind').value || '').trim().toLowerCase(), cur = curId();
+    box.textContent = '';
+    GRP.forEach(([c, name]) => {
+      const items = D.list.filter(x => (x.cat || (x.kind === 'image' ? 'image' : 'song')) === c && (!q || (x.title || '').toLowerCase().includes(q)));
+      if (!items.length) return;
+      const h = document.createElement('div'); h.className = 'dkgrp'; h.textContent = name + '（' + items.length + '）'; box.appendChild(h);
+      items.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'zh')).forEach(x => {
+        const a = document.createElement('a'); a.href = '#'; a.textContent = x.title || x.id; a.title = x.title;
+        if (x.kind === 'image') a.className = 'img';
+        if (x.id === cur) { a.classList.add('cur'); }
+        a.onclick = e => { e.preventDefault(); go(x.id); }; box.appendChild(a);
+      });
+    });
+    const c = box.querySelector('a.cur'); if (c && !paintList.once) { paintList.once = 1; c.scrollIntoView({ block: 'center' }); }
+  }
+  function refresh() { return api('/api/list').then(l => { D.list = l; paintList(); }); }
+  function syncEdit() { const ed = ED(), b = $('dkEdit'); if (b && ed) { b.textContent = ed.on ? '只播放' : '编辑'; b.classList.toggle('on', !!ed.on); } }
+
+  /* ---------- 快捷键（网页里也认；原生菜单另有一份，两边都走 D.cmd） ---------- */
+  D.cmd = function (c) {
+    const ed = ED();
+    switch (c) {
+      case 'save': save(); break;
+      case 'new': newDlg(); break;
+      case 'open': openFile(); break;
+      case 'saveAs': saveAs(); break;
+      case 'publish': publish(); break;
+      case 'undo': if (ed && ed.on) ed.undoOne(); break;
+      case 'zoomIn': if (ed && ed.on) ed.zoom(1); break;
+      case 'zoomOut': if (ed && ed.on) ed.zoom(-1); break;
+      case 'zoom0': if (ed && ed.on) ed.zoom(0); break;
+      case 'play': { const p = $('play'); if (p) p.click(); break; }
+      case 'edit': if (ed) { ed.toggle(); syncEdit(); } break;
+      case 'find': { const f = $('dkFind'); if (f) { f.focus(); f.select(); } break; }
+      case 'reveal': native({ cmd: 'reveal', path: D.site + '/songs/' + curId() + '/song.json' }); break;
+    }
+  };
+  addEventListener('keydown', e => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const k = e.key.toLowerCase(), m = { s: e.shiftKey ? 'saveAs' : 'save', n: 'new', o: 'open', e: 'edit', f: 'find', p: e.shiftKey ? 'publish' : null }[k];
+    if (!m) return; e.preventDefault(); e.stopImmediatePropagation(); D.cmd(m);
+  }, true);
+  addEventListener('beforeunload', e => { if (D.dirty && !D.leaving) { e.preventDefault(); e.returnValue = ''; } });
+
+  /* ---------- 启动 ---------- */
+  function boot() {
+    api('/api/ping').then(p => {
+      if (!p || p.app !== 'vectortab-desk') return;
+      D.site = p.site; document.body.classList.add('desk');
+      side(); refresh(); api('/api/state', { last: curId() });
+      const ed = ED();
+      if (ed) {
+        ed.onDirty = () => setDirty(true);
+        const sc = ed.score && ed.score();
+        let draft = false; try { draft = !!localStorage.getItem(ed.KEY(curId())); } catch (e) { }
+        if (sc) { setTimeout(() => { ed.toggle(true); syncEdit(); dispatchEvent(new Event('resize')); }, 150); }
+        else { setTimeout(() => dispatchEvent(new Event('resize')), 150); toast('图片谱只能播放；矢量谱才能编辑'); }
+        if (draft) { setDirty(true); setTimeout(() => toast('上次有没保存的改动，已恢复（⌘S 存进曲库）'), 900); } else setDirty(false);
+      }
+      const t = document.title.replace(/^● /, ''); native({ cmd: 'title', t });
+    }).catch(() => { });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(boot, 50)); else setTimeout(boot, 50);
+
+  const css = document.createElement('style');
+  css.textContent = 'body.desk #app{margin-left:232px}body.desk #back,body.desk #bar .tabs{display:none!important}'
+    + '#dkside{position:fixed;left:0;top:0;bottom:0;width:232px;z-index:70;display:flex;flex-direction:column;background:var(--paper);border-right:1px solid var(--line);font-size:13px;color:var(--ink)}'
+    + '#dkside .dkhd{padding:14px 14px 8px;display:flex;align-items:baseline;gap:6px}#dkside .dkhd b{font-size:16px;letter-spacing:.3px}#dkside .dkhd span{color:var(--muted);font-size:12px}'
+    + '#dkside .dkact{display:flex;gap:6px;padding:0 12px 8px}#dkside button{appearance:none;font:12px/1 inherit;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:none;color:var(--ink);cursor:pointer}'
+    + '#dkside button:hover{border-color:var(--accent)}#dkside button.pri,#dkside button.dirty{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}#dkside button.on{border-color:var(--accent);color:var(--accent)}'
+    + '#dkFind{margin:0 12px 6px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--ink);font:13px inherit}'
+    + '#dkList{flex:1;overflow:auto;padding:0 6px 10px}#dkList .dkgrp{color:var(--muted);font-size:11px;padding:10px 8px 4px}'
+    + '#dkList a{display:block;padding:5px 8px;border-radius:6px;color:var(--ink);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#dkList a:hover{background:rgba(127,127,127,.12)}'
+    + '#dkList a.img{color:var(--muted)}#dkList a.cur{background:var(--accent);color:var(--accent-ink)}'
+    + '#dkside .dkfoot{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-top:1px solid var(--line)}#dkside .dkfoot #dkPub{flex-basis:100%}'
+    + '#dkToast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:200;max-width:560px;padding:9px 16px;border-radius:9px;background:#222;color:#fff;font-size:13px;line-height:1.5;white-space:pre-line;transition:opacity .3s;pointer-events:none}#dkToast.bad{background:#b3261e}'
+    + '.dkmask{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center}.dkmask[hidden]{display:none}'
+    + '.dkdlg{width:380px;background:var(--paper);color:var(--ink);border-radius:14px;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,.3);font-size:13px}.dkdlg h3{margin:0 0 12px;font-size:16px}'
+    + '.dkdlg label{display:flex;align-items:center;gap:10px;margin:7px 0}.dkdlg label span{width:60px;color:var(--muted)}.dkdlg input,.dkdlg select{flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--ink);font:14px inherit}'
+    + '.dkdlg .dkhint{color:var(--muted);font-size:11px;line-height:1.6;margin:10px 0}.dkbtns{display:flex;justify-content:flex-end;gap:8px}.dkbtns button{appearance:none;padding:7px 14px;border:1px solid var(--line);border-radius:7px;background:none;color:var(--ink);font:13px inherit;cursor:pointer}.dkbtns .pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}';
+  document.head.appendChild(css);
 })(window);
 </script>
 </body></html>
