@@ -440,6 +440,16 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
         }
       }
     });
+    // 夹在两个音中间的延音杠：记在它左边那个音上（hold = 几条），时值已含这几拍；小节末尾的照旧走 b.holds
+    let t_ = 0.0;
+    for (const n of b.notes) {
+      const nh_ = Math.trunc(Number(n.hold) || 0);
+      for (let k = 0; k < nh_; k++) {
+        const hx = x + off + span * time_frac(b, t_ + n.dur - nh_ + k);
+        out.push(`<rect x="${f1(hx - 7)}" y="${f1(y + TABH / 2 - 1.2)}" width="14" height="2.4" class="cf-tab"/>`);
+      }
+      t_ += n.dur;
+    }
     for (let k = 0; k < b.holds; k++) {
       const hx = x + off + span * time_frac(b, sum(b.notes.map(n => n.dur)) + k);
       out.push(`<rect x="${f1(hx - 7)}" y="${f1(y + TABH / 2 - 1.2)}" width="14" height="2.4" class="cf-tab"/>`);
