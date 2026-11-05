@@ -525,12 +525,15 @@ function row_heights(d, tab) {
   const nly = rows.map(r => { let m = 0; for (const b of r.bars) for (const n of b.notes) for (const k of [0, 1]) if (T(n['ly' + k])) m = Math.max(m, k + 1); return m; });
   const hof = rows.map((_, ri) => TOPPAD + ((tab && ri < tab.rows.length && T(tab.rows[ri].houses)) ? HOUSE : 0));
   const tonly = rows.map((_, ri) => !!(tab && ri < tab.rows.length && T(tab.rows[ri].tab_only)));
+  // 这一行有 solo 六线谱（第二条，row.solo）：简谱、歌词整体下移 SOLO_DY
+  const so = rows.map((_, ri) => (tab && ri < tab.rows.length && tab.rows[ri].solo && !tonly[ri]) ? SOLO_DY : 0);
   const tops = [], hs = []; let acc = 110;
   nly.forEach((k, ri) => {
-    const h = hof[ri] + Math.ceil(content_bottom(rows[ri], (tab && ri < tab.rows.length) ? tab.rows[ri] : null, k, tonly[ri])) + ROWGAP;
+    const h = hof[ri] + Math.ceil(content_bottom(rows[ri], (tab && ri < tab.rows.length) ? tab.rows[ri] : null, k, tonly[ri])) + so[ri] + ROWGAP;
     tops.push(acc); hs.push(h); acc += h; });
-  return [tops, hs, hof, nly, tonly, acc];
+  return [tops, hs, hof, nly, tonly, acc, so];
 }
+const SOLO_DY = 96;  // 第二条六线谱（solo 吉他，跟着简谱走的单音旋律）比第一条低多少
 const ROWGAP = 4;    // 行内最低的东西到行底的留白：行高按实际内容算（2026-10-30「行距缩小一半」）
 function content_bottom(jr, tr, nly, tonly_row) {
   if (tonly_row) {
@@ -555,8 +558,9 @@ function render(d, tab) {
     for (const r_ of tab.rows) for (const b_ of r_.bars) { cur = b_.sig || cur; b_._u = ['6/8', '9/8', '12/8'].indexOf(cur) >= 0 ? 1.5 : 1.0; }
   }
   if (tab) prep_rows(tab.rows, d.rows, tab.rows.map((_, ri) => W - PAD * 2 - clef_width(ri === 0 ? d.sig : null)));
+  if (tab) for (const r_ of tab.rows) if (r_.solo) r_.solo.bars.forEach((b_, i_) => { if (i_ < r_.bars.length) { b_.bpx = r_.bars[i_].bpx; b_.bkn = r_.bars[i_].bkn; b_._u = r_.bars[i_]._u; } });
   const rows = d.rows;
-  const [tops, , hof, nlyR, tonly, HH] = row_heights(d, tab);
+  const [tops, , hof, nlyR, tonly, HH, so] = row_heights(d, tab);
   const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${HH}" font-family="Songti SC, serif">`];
   out.push(COLOR_CSS);
   out.push(`<rect width="${W}" height="${HH}" class="cf-bg"/>`);
@@ -573,6 +577,7 @@ function render(d, tab) {
   let barNo = 1;            // 小节号：每行行首、谱表顶线左上角（同 draw.py）
   rows.forEach((r, ri) => {
     const ytop = tops[ri], y = ytop + hof[ri];
+    const yj = y + so[ri];                    // 简谱、歌词的基准（有 solo 六线谱时下移）
     const bars = r.bars;
     const tot = sum(bars.map(bar_width)) || 1;
     const cw = clef_width(ri === 0 ? d.sig : null);
@@ -580,10 +585,11 @@ function render(d, tab) {
     const avail = W - PAD * 2 - cw;
     const trow = (tab && ri < tab.rows.length) ? tab.rows[ri] : null;
     const bt = or(trow ? trow.bt : null, bars.map(() => 'bar').concat(['bar']));
-    if (!tonly[ri]) { barline(out, PAD + cw, y + DIGY - 30, y + DIGY + 10, bt[0], 20, true, FS * 0.08, 'cs-jianpu'); }
+    if (!tonly[ri]) { barline(out, PAD + cw, yj + DIGY - 30, yj + DIGY + 10, bt[0], 20, true, FS * 0.08, 'cs-jianpu'); }
     const npos = new Map();
     if (trow) {
       tab_svg(trow, PAD, avail + cw, y + taby(tonly[ri]), out, true, ri === 0 ? d.sig : null);
+      if (trow.solo && !tonly[ri]) tab_svg(trow.solo, PAD, avail + cw, y + TABY + SOLO_DY, out, true, ri === 0 ? d.sig : null);
       const acc = [0.0];
       for (const bb of bars) acc.push(acc[acc.length - 1] + bar_width(bb));
       for (const h of (trow.houses || [])) {
@@ -629,30 +635,30 @@ function render(d, tab) {
           let j = i0;
           while (j + 1 < b.notes.length && b.notes[j + 1].ul >= k
             && Math.trunc(pos[j + 1][1] / UNIT + 1e-6) === Math.trunc(pos[i0][1] / UNIT + 1e-6)) j++;
-          const uy = y + DIGY + 7 + (k - 1) * 5;
+          const uy = yj + DIGY + 7 + (k - 1) * 5;
           out.push(`<line x1="${f1(pos[i0][0] - 2)}" y1="${uy}" x2="${f1(pos[j][0] + DW)}" y2="${uy}" class="cs-jianpu" stroke-width="1.7"/>`);
           i0 = j + 1;
         }
       }
       b.notes.forEach((n, ni) => {
         const nx = pos[ni][0];
-        if (n.deg === '-') out.push(`<text x="${f1(nx)}" y="${y + DIGY}" font-size="${FS}" font-family="Helvetica" class="cf-jianpu">—</text>`);
-        else if (n.deg === null || n.deg === undefined) out.push(`<text x="${f1(nx)}" y="${y + DIGY}" font-size="${FS}" fill="#D62828" font-family="Helvetica">?</text>`);
+        if (n.deg === '-') out.push(`<text x="${f1(nx)}" y="${yj + DIGY}" font-size="${FS}" font-family="Helvetica" class="cf-jianpu">—</text>`);
+        else if (n.deg === null || n.deg === undefined) out.push(`<text x="${f1(nx)}" y="${yj + DIGY}" font-size="${FS}" fill="#D62828" font-family="Helvetica">?</text>`);
         else {
-          out.push(`<text x="${f1(nx)}" y="${y + DIGY}" font-size="${FS}" font-family="Helvetica" class="cf-jianpu">${n.deg}</text>`);
-          if (n.oct > 0) out.push(`<circle cx="${f1(nx + DCX)}" cy="${f1(y + DIGY - DTOP - 7)}" r="2.2" class="cf-jianpu"/>`);
-          else if (n.oct < 0) out.push(`<circle cx="${f1(nx + DCX)}" cy="${y + DIGY + 12 + 4 * n.ul}" r="2.2" class="cf-jianpu"/>`);
+          out.push(`<text x="${f1(nx)}" y="${yj + DIGY}" font-size="${FS}" font-family="Helvetica" class="cf-jianpu">${n.deg}</text>`);
+          if (n.oct > 0) out.push(`<circle cx="${f1(nx + DCX)}" cy="${f1(yj + DIGY - DTOP - 7)}" r="2.2" class="cf-jianpu"/>`);
+          else if (n.oct < 0) out.push(`<circle cx="${f1(nx + DCX)}" cy="${yj + DIGY + 12 + 4 * n.ul}" r="2.2" class="cf-jianpu"/>`);
         }
         for (const k of [0, 1]) {
           const ch = get(n, 'ly' + k);
           if (T(ch)) {
-            const yy = y + (k === 0 ? LYR1 : LYR2);
+            const yy = yj + (k === 0 ? LYR1 : LYR2);
             out.push(`<text x="${f1(nx + DCX)}" y="${yy}" font-size="${LYFS}" text-anchor="middle" font-family="PingFang SC, sans-serif" class="cf-lyric" data-b="${gfmt((rb + pos[ni][1]) * bu)}" data-v="${k}">${esc(ch)}</text>`);
           }
         }
         const g = get(n, 'grace');
         if (T(g) && g.deg !== null && g.deg !== undefined) {
-          const gx = nx - 17, gy = y + DIGY - 20;
+          const gx = nx - 17, gy = yj + DIGY - 20;
           out.push(`<text x="${f1(gx)}" y="${f1(gy)}" font-size="15" font-family="Helvetica" class="cf-jianpu">${g.deg}</text>`);
           for (let k = 0; k < g.ul; k++) {
             const uy = gy + 4 + k * 3.6;
@@ -663,24 +669,24 @@ function render(d, tab) {
         }
         if (T(get(n, 'acc'))) {
           const sym = { '#': '♯', 'n': '♮', 'b': '♭' }[n.acc] || n.acc;
-          out.push(`<text x="${f1(nx - 2)}" y="${f1(y + DIGY - 12)}" font-size="15" text-anchor="end" font-family="Helvetica, Arial Unicode MS, sans-serif" class="cf-jianpu">${sym}</text>`);
+          out.push(`<text x="${f1(nx - 2)}" y="${f1(yj + DIGY - 12)}" font-size="15" text-anchor="end" font-family="Helvetica, Arial Unicode MS, sans-serif" class="cf-jianpu">${sym}</text>`);
         }
-        if (T(n.dot)) { out.push(`<circle cx="${f1(nx + DW + 3)}" cy="${f1(y + DIGY - FS * 0.27)}" r="2.2" class="cf-jianpu"/>`); }
+        if (T(n.dot)) { out.push(`<circle cx="${f1(nx + DW + 3)}" cy="${f1(yj + DIGY - FS * 0.27)}" r="2.2" class="cf-jianpu"/>`); }
       });
       let ni = 0;
       while (ni < b.notes.length) {
         if (get(b.notes[ni], 'tup') === 3 && ni + 2 < b.notes.length && b.notes.slice(ni, ni + 3).every(q => get(q, 'tup') === 3)) {
           const cx3 = (pos[ni][0] + pos[ni + 2][0] + DW) / 2;
-          out.push(`<text x="${f1(cx3)}" y="${f1(y + DIGY - DTOP - 11)}" font-size="11" text-anchor="middle" font-family="Helvetica" font-style="italic" class="cf-jianpu">3</text>`);
+          out.push(`<text x="${f1(cx3)}" y="${f1(yj + DIGY - DTOP - 11)}" font-size="11" text-anchor="middle" font-family="Helvetica" font-style="italic" class="cf-jianpu">3</text>`);
           ni += 3;
         } else ni++;
       }
       x += bw;
-      if (!tonly[ri]) { barline(out, x, y + DIGY - 30, y + DIGY + 10, bi + 1 < bt.length ? bt[bi + 1] : 'bar', 20, false, FS * 0.08, 'cs-jianpu'); }
+      if (!tonly[ri]) { barline(out, x, yj + DIGY - 30, yj + DIGY + 10, bi + 1 < bt.length ? bt[bi + 1] : 'bar', 20, false, FS * 0.08, 'cs-jianpu'); }
     });
     for (const s_ of (r.slurs || [])) {
       if (T(get(s_, 'nxt')) || T(get(s_, 'prv'))) {
-        const ty = y + DIGY - DTOP - 13;
+        const ty = yj + DIGY - DTOP - 13;
         let d_;
         if (T(get(s_, 'nxt'))) {
           const a = npos.get(s_.b0 + ',' + s_.n0);
@@ -701,7 +707,7 @@ function render(d, tab) {
       const a = npos.get(s_.b0 + ',' + s_.n0), b = npos.get(s_.b1 + ',' + s_.n1);
       if (a === undefined || b === undefined || b <= a) continue;
       const x0 = a + 1, x1 = b + DW - 1;
-      const ty = y + DIGY - DTOP - 13;
+      const ty = yj + DIGY - DTOP - 13;
       const cy = ty - Math.min(20, 8 + (x1 - x0) * 0.13);
       out.push(`<path d="M${f1(x0)},${f1(ty)} Q${f1((x0 + x1) / 2)},${f1(cy)} ${f1(x1)},${f1(ty)}" fill="none" class="cs-jianpu" stroke-width="1.6" stroke-linecap="round"/>`);
     }
@@ -779,10 +785,11 @@ function digital(sc) {
   const d = { title: m.title, artist: m.artist, lyricist: get(m, 'lyricist'), composer: get(m, 'composer'), key: m.key, sig: m.sig,
     lyr_ref: get(m, 'lyr_ref'), bpm: m.bpm, capo: m.capo,
     rows: sc.rows.map(r => ({ bars: clone(r.jp.bars), slurs: clone(r.jp.slurs) })) };
-  const t = { rows: sc.rows.map(r => Object.assign({ bars: clone(r.tab.bars), bt: r.bt, houses: r.houses, slurs: clone(r.tab.slurs) }, T(r.tab_only) ? { tab_only: true } : {})) };
+  const t = { rows: sc.rows.map(r => Object.assign({ bars: clone(r.tab.bars), bt: r.bt, houses: r.houses, slurs: clone(r.tab.slurs) }, T(r.tab_only) ? { tab_only: true } : {},
+    (r.solo && !T(r.tab_only)) ? { solo: { bars: clone(r.solo.bars), bt: r.bt, houses: [], slurs: clone(r.solo.slurs || []) } } : {})) };
   const svg = render(d, t);
   const rows = d.rows;
-  const [tops, rh, hof, , tonly, HH] = row_heights(d, t);
+  const [tops, rh, hof, , tonly, HH, sdy] = row_heights(d, t);
   const S = v => pround(v);
   const srows = [];
   prep_rows(t.rows, d.rows, t.rows.map((_, ri) => W - PAD * 2 - clef_width(ri === 0 ? d.sig : null)));
@@ -828,7 +835,8 @@ function digital(sc) {
     });
     srows.push({ nt, y0: S(y0), y1: S(y0 + rh[ri]), sy0: S(y + TY), sy1: S(y + TY + TABH),
       bl: bl.map(S), bb: bars.map(b => pround(b.beats * U)), m0: S(x0 + off), end, rep,
-      bs: [[S(hof[ri] + TY), S(hof[ri] + TY + TABH)]].concat(tonly[ri] ? [] : [[S(hof[ri] + DIGY - 30), S(hof[ri] + DIGY + 10)]]) });
+      bs: [[S(hof[ri] + TY), S(hof[ri] + TY + TABH)]].concat(sdy[ri] ? [[S(hof[ri] + TY + SOLO_DY), S(hof[ri] + TY + SOLO_DY + TABH)]] : [])
+        .concat(tonly[ri] ? [] : [[S(hof[ri] + sdy[ri] + DIGY - 30), S(hof[ri] + sdy[ri] + DIGY + 10)]]) });
   });
   const structure = { sig: d.sig, per: pround(PER * U), pages: [{ file: 'score.svg', w: W, h: HH, title: true, sig: d.sig, sigbox: null, rows: srows }] };
 
@@ -881,7 +889,7 @@ function digital(sc) {
       const x0 = (b0 === 0 && k_ === 0) ? PAD - 2 : sr.bl[b0];
       const x1 = sr.bl[b1 + 1] + (k_ === boxes.length - 1 ? 1 : 0);
       const ya = sr.y0 + S(hof[ri] - TOPPAD) + 1;
-      const yb = tonly[ri] ? sr.sy1 + STEM + 16 : sr.y0 + S(hof[ri] + DIGY + 27);
+      const yb = tonly[ri] ? sr.sy1 + STEM + 16 : sr.y0 + S(hof[ri] + sdy[ri] + DIGY + 27);
       return [x0, ya, x1 - x0, yb - ya];
     });
   };
@@ -3688,6 +3696,26 @@ function sndBuild(){
       u0+=units;
     }
   });
+  /* Solo 吉他轨（row.solo：跟着简谱走的单音六线谱，原生 App 里加的）：和伴奏用同一把琴的音色，
+     但占另一组「弦」（v2：声部槽 6～11），和伴奏互不掐音；休止不发声，延音线的后一个音不重弹，击 / 勾弦照连 */
+  PL.forEach((m,i)=>{
+    const row=sc.rows[m.sr], so=row&&row.solo; if(!so||row.tab_only) return;
+    const tb=so.bars||[], tied=new Set(), lega=new Map();
+    (so.slurs||[]).forEach(q=>{ const key=q.b1+','+q.n1; if(q.k==='tie') tied.add(key); else if(q.k==='H'||q.k==='P'||q.k==='sl') lega.set(key,q.k); });
+    let u0=CUM[i];
+    for(let bi=m.b0; bi<m.b1 && bi<tb.length; bi++){
+      const b=tb[bi], units=m.bars[bi-m.b0]||0, beats=b.beats||1; let acc=0;
+      (b.notes||[]).forEach((n,ni)=>{
+        const a0=acc; acc+=+n.dur||0;
+        if(n.rest||tied.has(bi+','+ni)) return;
+        const h=(n.hit||[]).find(h=>h.s>=0&&h.s<=5&&isdig(h.f)); if(!h) return;
+        const e={u:u0+a0/beats*units, uo:0, dts:0, s:h.s, fret:+h.f, vel:0.92, v2:true};
+        const k=lega.get(bi+','+ni); if(k) e.leg={k, from:null};
+        EV.push(e);
+      });
+      u0+=units;
+    }
+  });
   EV.sort((a,b)=>(a.u-b.u)||(a.dts-b.dts));
   drmPlan();
 }
@@ -3805,8 +3833,9 @@ let sLeg=0;                                        /* 做过几次击/勾/滑（
 /* 击弦 H / 勾弦 P / 滑音 sl：真琴不重新拨弦，是正在响的弦变音高。
    这里改正在响的音源的 playbackRate（相对它缓冲的基准音高）：击/勾瞬间到位，滑音 80ms 线性滑过去；
    击弦补一下很轻、很短的手指触弦声，勾弦补一下手指拨离弦的轻响。弦上没有在响的音（比如刚起头）就退回普通轻拨。 */
+const sVI=e=>e.s+(e.v2?6:0);                    /* 声部槽：伴奏 0～5（一根弦一个），Solo 吉他轨 6～11 */
 function sndLegato(e,t){
-  const v=sVoice[e.s]; if(!v || v._midi==null || v._t0>t-0.02) return false;
+  const v=sVoice[sVI(e)]; if(!v || v._midi==null || v._t0>t-0.02) return false;
   const midi=S_MIDI[e.s]+e.fret+sndCapo(), r=Math.pow(2,(midi-v._base)/12), r0=Math.pow(2,(v._midi-v._base)/12);
   if(Math.abs(midi-v._base)>14) return false;       /* 跨度太大，变速音色就假了，老实重拨 */
   try{
@@ -3824,11 +3853,11 @@ function sndLegato(e,t){
       const lv=Math.min(1.0, e.vel*0.68*(0.86+0.028*(5-e.s)));   /* 11-02：「滑音的尾音，音量略微再大一些」0.55→0.68（+1.8dB）；之前：再低 1～3dB ×0.8 →「还是高了点，再往下调」×0.55 */
       g.gain.setValueAtTime(0,ta); g.gain.linearRampToValueAtTime(lv,ta+0.06);
       src.connect(g); g.connect(sPan[e.s]||sBus);
-      src._t0=ta; src._g=g; src._s=e.s; src._base=midi; src._midi=midi;
+      src._t0=ta; src._g=g; src._s=sVI(e); src._base=midi; src._midi=midi;
       src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
       src.start(ta, 0.03); sAll.push(src);
       try{ v._g.gain.setTargetAtTime(0,ta+0.03,0.04); v.stop(ta+0.5); if(w) { w._g.gain.setTargetAtTime(0,ta+0.03,0.04); w.stop(ta+0.5); } }catch(x){}
-      sVoice[e.s]=src;
+      sVoice[sVI(e)]=src;
     } else {
       /* 击弦 / 勾弦的落点（用户 2026-11-02：「击弦的音量也太小了」）：同滑音，余音早弱了，
          击弦是手指砸下去、勾弦是手指勾一下弦，落点都有新能量。补一个和拨弦同样响的音（勾 0.9），只跳过前 10ms 的拨片硬起音，
@@ -3838,11 +3867,11 @@ function sndLegato(e,t){
       const lv=Math.min(1.0, e.vel*(e.leg.k==='P'?0.5:0.6)*(0.86+0.028*(5-e.s)));   /* 用户：「击弦、勾弦音量要比前一个音低」：击 0.6、勾 0.5 */
       g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(lv,t+0.008);
       src.connect(g); g.connect(sPan[e.s]||sBus);
-      src._t0=t; src._g=g; src._s=e.s; src._base=midi; src._midi=midi;
+      src._t0=t; src._g=g; src._s=sVI(e); src._base=midi; src._midi=midi;
       src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
       src.start(t, 0.01); sAll.push(src);
       try{ v._g.gain.setTargetAtTime(0,t+0.005,0.02); v.stop(t+0.3); if(w){ w._g.gain.setTargetAtTime(0,t+0.005,0.02); w.stop(t+0.3); } }catch(x){}
-      sVoice[e.s]=src;
+      sVoice[sVI(e)]=src;
     }
     if(e.leg.k!=='sl'){                              /* 手指触弦 / 拨离的那一点点响 */
       const src=acx.createBufferSource(), g=acx.createGain();
@@ -3859,15 +3888,15 @@ function sndPlay(e,t){
   sndBusGet();
   if(e.mute){ for(let s=0;s<6;s++) sndStop(s,t,0.03); return; }
   if(e.leg && e.fret!=null && sndLegato(e,t)) return;
-  sndStop(e.s,t,0.004);
+  sndStop(sVI(e),t,0.004);
   const src=acx.createBufferSource(), g=acx.createGain();
   const midi=e.fret==null?null:S_MIDI[e.s]+e.fret+sndCapo();
   src.buffer = midi==null ? sndNoiseBuf() : sndBuf(midi, e.vel);
   g.gain.value=Math.min(1.2, e.vel*(e.fret==null?0.5:1)*(0.86+0.028*(5-e.s)));
   src.connect(g); g.connect(sPan[e.s]||sBus);
-  src._t0=t; src._g=g; src._s=e.s; src._base=midi; src._midi=midi;
+  src._t0=t; src._g=g; src._s=sVI(e); src._base=midi; src._midi=midi;
   src.onended=()=>{ const i=sAll.indexOf(src); if(i>=0) sAll.splice(i,1); sndFree(src); };
-  src.start(t); sVoice[e.s]=src; sAll.push(src); sPlayed++;
+  src.start(t); sVoice[sVI(e)]=src; sAll.push(src); sPlayed++;
   const T=TIMBRES[TMB]||TIMBRES.steel;
   if(midi!=null && (T.dbl||T.chorus)){
     /* 十二弦：低四弦配高八度细弦、高两弦同度；稍晚 6ms（拨片先碰粗弦），同度那根微失谐 4 音分出「合唱」感。
