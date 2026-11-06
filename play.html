@@ -1720,6 +1720,12 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
 #flash{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:7;pointer-events:none;background:var(--cue);
        color:#fff;font-size:13px;font-weight:600;padding:7px 15px;border-radius:999px;opacity:0;transition:opacity .25s}
 #flash.on{opacity:1}
+/* 跟弹：谱面底部一直亮着，告诉人现在是听还是轮到自己弹（底栏播放时会收起，靠它看；当前行总在上半屏，放底下不挡谱） */
+#wrapP.folgap{--cue:#1a9e47!important;--cue-glow:rgba(26,158,71,.42)!important}
+#wrapP.folgap #ball{--bc:#1a9e47}
+#folTag{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);z-index:7;pointer-events:none;background:var(--cue);
+        color:#fff;font-size:15px;font-weight:700;padding:7px 18px;border-radius:999px;white-space:nowrap}
+#folTag.gap{background:#1a9e47}
 @media (max-width:470px){ #dock{gap:8px 9px;padding-inline:10px} .sec{padding-inline:10px} }
 @media (prefers-reduced-motion:reduce){ #dock,#flash{transition:none} }
 </style>
@@ -1814,6 +1820,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
       <div id="fall" aria-hidden="true"></div>
       <div id="count" hidden><span>3</span></div>
       <div id="flash"></div>
+      <div id="folTag" hidden></div>
     </div>
     <div id="dock">
       <div id="seek" role="slider" tabindex="0" aria-label="演奏进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="selrng"></div>
@@ -1889,6 +1896,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
           </div></div>
         </div>
         <button class="sm cjk" id="mode" aria-pressed="false">跑马灯</button>
+        <button class="sm cjk" id="folBtn" aria-pressed="false" hidden title="跟弹：只留吉他，放一小节、空一小节给你弹（f）。练某几小节：先在谱上拖出选段；没选就从当前小节跟到尾">跟弹</button>
         <button class="sm cjk" id="loopBtn" aria-pressed="false" title="循环：不循环 → 列表循环 → 单曲循环">循环</button>
       </div>
     </div>
@@ -2188,7 +2196,7 @@ function ordDialog(){
   ORD=ids; ordWrite(); applyOrd(); renderLib();
   alert('顺序已套用（'+ids.length+' 首）。');
 }
-function open_(s){ S=s; capoLoad();
+function open_(s){ S=s; FOL=null; folUi(); capoLoad();
   /* 顶栏只放歌名。拍号底部那排已经有了（「♩4/4」），顶上再挂一个是重复。 */
   $('songname').textContent=s.title||'';
 }
@@ -2739,7 +2747,7 @@ const REDUCE=matchMedia('(prefers-reduced-motion: reduce)').matches;
    游标按 f(pos) 走，人声 worklet 按音轨位置算同一个 f */
 const RIT_D=0.4; let RIT=null;
 function ritSet(){
-  RIT=null; if(!PL.length) return; let L=0, k=0;
+  RIT=null; if(!PL.length||FOL) return; let L=0, k=0;   /* 跟弹一小节一小节地来，结尾不渐慢 */
   for(let i=PL.length-1;i>=0 && k<2;i--){ const bs=PL[i].bars||[]; for(let j=bs.length-1;j>=0 && k<2;j--){ L+=bs[j]; k++; } }
   if(L>0 && L<TOT) RIT={a:TOT-L, L};
 }
@@ -2756,6 +2764,7 @@ let acx=null, aT=0, aPos=0, nb=0, pend=[], armed=false;
 let SND=false;                  /* 试听：按谱发声（引擎见下文「试听」一节） */
 let DRM=false;                  /* 鼓伴奏（见下文「鼓」一节） */
 let VOX=false;                  /* 人声（离线合成的音轨，见下文「人声」一节） */
+let FOL=null;                   /* 跟弹（见下文 seqNow）：{a,b 原演奏顺序的单位区间, loop 跟的是选段, sel 进来前的选段} */
 let xBuf=null, xSrc=null, xOld=[], xBus=null, xId='', xErr='', xLoading=null, xT=0, xPos=0, xEnd=0;
 let xNode=null, xWk=null, xWkId='', xOn=false, xRate=1;
 let xBytes=null, xBytesId='', xFetching=null, xRetryAt=0, xRetries=0;   /* 开谱时只预取字节，解码等到有了用户手势的 AudioContext 再做 */   /* AudioWorklet 时间伸缩：变速不变调 */
@@ -2840,14 +2849,62 @@ ribbon = lsg('ribbon')==='1'; metro = lsg('metro')==='1'; subdiv = lsg('subdiv')
    跑马灯 = 展开反复，一条带子只往前走；
    整页   = 谱面只铺一遍（和印刷谱一致），反复时游标跳回原位，能看出整首的结构。 */
 
+/* 跟弹：只留吉他，放一小节、空一小节给人弹。演奏顺序临时展开成一小节一条、每小节两遍（第二遍 gap 空着），
+   游标、节拍器、选段循环都不用单独改；退出后换回 S.seq。fo 记着它在原顺序里的位置：起始单位、第几小节、第几遍 */
+function seqNow(){
+  if(!FOL) return S.seq;
+  const span=it=>{ const r=S.rows[it.r]; if(!r||!S.pages[r.p]) return null;
+    const n=r.bb.length, b0=it.cut0!=null?Math.max(0,Math.min(it.cut0,n-1)):0, b1=it.cut!=null?Math.min(it.cut,n):n;
+    return b1>b0?[b0,b1]:null; };
+  const tot={}, seen={}, out=[]; let u=0, no=0, sec='', last=null;
+  S.seq.forEach(it=>{ if(span(it)) tot[it.r]=(tot[it.r]||0)+1; });
+  S.seq.forEach(it=>{ const sp=span(it); if(!sp) return;
+    if(it.sec!=null) sec=it.sec;
+    const k=seen[it.r]||0; seen[it.r]=k+1;
+    for(let b=sp[0];b<sp[1];b++){
+      if(u>=FOL.a-1e-6 && u<FOL.b-1e-6){
+        const kv=tot[it.r]>1?k:-1, s=sec!==last?sec:null; last=sec;
+        out.push({r:it.r,cut0:b,cut:b+1,sec:s,fo:{gap:false,u0:u,no,kv}},{r:it.r,cut0:b,cut:b+1,sec:null,fo:{gap:true,u0:u,no,kv}}); }
+      u+=S.rows[it.r].bb[b]; no++; } });
+  return out;
+}
+function folUi(){ const b=$('folBtn'); if(b) b.setAttribute('aria-pressed',String(!!FOL)); if(!FOL) folPaint(null); }
+function folPaint(fo){ const t=$('folTag'); if(!t) return;
+  t.hidden=!fo; $('wrapP').classList.toggle('folgap',!!(fo&&fo.gap)); if(!fo) return;
+  const s=(fo.gap?'你来弹':'听')+' · 第 '+(fo.no+1)+' 小节'; if(t.textContent!==s) t.textContent=s;
+  t.classList.toggle('gap',fo.gap); }
+function folBuild(){ const b=bpm; buildPlay(); setBpm(b); if(FOL&&FOL.loop) selSet(0,TOT); selPaint(); folUi(); if(PL.length) paint(); }
+/* 拖了选段就跟这一段（绕着来）；没拖就从当前小节一路跟到尾 */
+function folStart(){
+  if(!S||!S.score||!EV.length){ say('这首没有吉他音可以跟'); return; }
+  if(cid) toggle();
+  const s=SEL, a=at(pos), m=PL[a.i];
+  let u=CUM[a.i]; for(const n of m.bars){ if(u+n>pos+1e-6) break; u+=n; }
+  if(pos>=TOT-1e-6) u=0;
+  P.stop();
+  FOL={a:s?s.a:u, b:s?s.b:TOT, loop:!!s, sel:s&&{a:s.a,b:s.b}};
+  folBuild();
+  if(!FOL){ say('这一段没有可以跟的小节'); return; }
+  seek(0); toggle();
+  say(s?'跟弹这一段：放一小节，空一小节给你弹，绕着来':'跟弹：放一小节，空一小节给你弹');
+}
+function folEnd(){
+  const a=at(pos), f=PL[a.i]&&PL[a.i].fo, u=f?f.u0+a.b:0, F=FOL;
+  if(cid) toggle();
+  FOL=null; P.stop(); folBuild();
+  if(F.sel && F.sel.b<=TOT) selSet(F.sel.a,F.sel.b);
+  seek(u); say('跟弹结束');
+}
 function buildPlay(){
   P.stop();
   PL=[]; paper.textContent=''; padB(0); LAB=[]; SEL=null; selAnc=null; selDirty=true;
   if(!S || !S.seq.length){ paper.appendChild(el('div','empty','这首还没有谱面内容。')); return; }
+  let seq=seqNow(); if(!seq.length){ FOL=null; folUi(); seq=S.seq; }
+  $('folBtn').hidden=!S.score;
   if(!sigSet(S)) setTimeout(()=>say('拍号还没设，先按 4/4 走'),500);
   let curSec='';
   const items=[];
-  S.seq.forEach((it,idx)=>{
+  seq.forEach((it,idx)=>{
     const r=S.rows[it.r]; if(!r) return;
     const pg=S.pages[r.p]; if(!pg) return;
     const first=(idx===0);
@@ -2931,7 +2988,7 @@ function buildPlay(){
       const row=mkStrip(r,pg,cw,ch,sx0,maxCw);
       /* sec：字符串＝新段名；''＝从这儿起不显示段名（前奏后面直接开唱的那段）；null＝沿用上一个 */
       if(it.sec!=null){ curSec=it.sec; if(it.sec){ row.classList.add('secstart'); row.title=it.sec; } }
-      PL.push({beats:bb.reduce((a,b)=>a+b,0), bars:bb, gx, row:k, sx0,
+      PL.push({beats:bb.reduce((a,b)=>a+b,0), bars:bb, gx, row:k, sx0, fo:it.fo,
                sr:it.r, b0:(it.cut0!=null?it.cut0:0),
                b1:(it.cut!=null?it.cut:r.bb.length),
                cw, ch, sc:(r.sy0+r.sy1)/2 - r.y0});
@@ -2959,7 +3016,7 @@ function buildPlay(){
       paper.appendChild(tt);
     }
     /* 回跳：谱面只铺一遍（和印刷谱一致），反复时游标跳回原位 */
-    const used=[...new Set(S.seq.map(i=>i.r))].filter(i=>S.rows[i]).sort((a,b)=>
+    const used=[...new Set(seq.map(i=>i.r))].filter(i=>S.rows[i]).sort((a,b)=>
       (S.rows[a].p-S.rows[b].p)||(S.rows[a].y0-S.rows[b].y0));
     const geo={}; let maxCw=1;
     /* 整页模式不裁左右：每行独占一行，没有接缝要对付，
@@ -2981,7 +3038,7 @@ function buildPlay(){
         for(let j=0;j<n;j++) gx.push((a+(b2-a)*j/n - g.sx0)/g.cw*100); }
       gx.push((r.bl[nb]-g.sx0)/g.cw*100);
       if(it.sec!=null) curSec=it.sec;
-      PL.push({beats:bb.reduce((a,b2)=>a+b2,0), bars:bb, gx, row:g.idx, sx0:g.sx0,
+      PL.push({beats:bb.reduce((a,b2)=>a+b2,0), bars:bb, gx, row:g.idx, sx0:g.sx0, fo:it.fo,
                sr:it.r, b0:b0, b1:nb,
                cw:g.cw, ch:g.ch, sc:(r.sy0+r.sy1)/2 - r.y0});
       LAB.push(curSec);
@@ -3033,8 +3090,9 @@ function paint(){
   if(!PL.length) return;
   const a=at(pos), m=PL[a.i], r=prows[m.row];
   /* 段落提示（前奏 / 第 2 遍…）：选段循环时不报——每绕回段首一次就会报一次段首的段名，全是噪音 */
-  if(a.i!==cur){ const lb=LAB[a.i]; if(lb && lb!==LAB[cur] && !SEL) say(lb); cur=a.i; }
-  where.textContent=[LAB[a.i], '第'+(a.i+1)+'/'+PL.length+'段', SEL&&('循环 '+SEL.n+' 小节')].filter(Boolean).join(' · ');
+  if(a.i!==cur){ const lb=LAB[a.i]; if(lb && lb!==LAB[cur] && !SEL && !FOL) say(lb); cur=a.i; }
+  folPaint(m.fo);
+  where.textContent=[LAB[a.i], '第'+(a.i+1)+'/'+PL.length+'段', SEL&&!FOL&&('循环 '+SEL.n+' 小节')].filter(Boolean).join(' · ');
   if(selDirty) selPaint();
   rem.textContent=mmss((W(TOT)-W(pos))/(bpm*GRP)*60);
   beatv.textContent='♩'+(INBAR[Math.min(TOT-1,Math.floor(pos))]||'1/4');
@@ -3120,7 +3178,7 @@ function ballBuild(){
 function kvBuild(){
   const tot={}, seen={};
   PL.forEach(m=>tot[m.sr]=(tot[m.sr]||0)+1);
-  KV=PL.map(m=>{ const n=seen[m.sr]||0; seen[m.sr]=n+1; return tot[m.sr]>1 ? n : -1; });
+  KV=PL.map(m=>{ const n=seen[m.sr]||0; seen[m.sr]=n+1; return m.fo ? m.fo.kv : (tot[m.sr]>1 ? n : -1); });
   kOn.forEach(e=>e.classList.remove('ko')); kOn=[];
 }
 /* 卡拉 OK：当前这段里、拍位已经走到的字加 .ko；换段（这一行弹过去了）就全部恢复。
@@ -3484,7 +3542,7 @@ function frame(t){
   if(!drag) pos+=bpm*GRP/60*dt*ritF(pos);
   /* 切到别的窗口再回来（用户 2026-11-01：背景音一直在放，小球不走，回来就不同步）：
      后台里 rAF 停了、音频没停。只要音频在跑，就按音频时钟（锚点 aT/aPos）把 pos 对回去，选段循环按段长绕 */
-  if(gap>.3 && !drag && acx && acx.state==='running' && (metro||SND||DRM||VOX)){
+  if(gap>.3 && !drag && acx && acx.state==='running' && (metro||SND||DRM||VOX||FOL)){
     let p=Wi(W(aPos)+(acx.currentTime-aT)*bpm*GRP/60);
     if(SEL && p>=SEL.b && SEL.b>SEL.a){ p=SEL.a+((p-SEL.b)%(SEL.b-SEL.a)); }
     if(p>=0 && p<=TOT+1e-6) pos=p; }
@@ -3495,7 +3553,7 @@ function frame(t){
   if(pos>=TOT){ pos=TOT; paint(); follow(dt);
     if(LOOP==='one'){ seek(0); say('单曲循环'); raf=requestAnimationFrame(frame); return; }   /* 不停：各轨按新锚点从头排 */
     P.stop();
-    if(LOOP==='list'){ loopNext(); return; }
+    if(LOOP==='list' && !FOL){ loopNext(); return; }
     say('谱终'); return; }
   paint(); follow(dt);
   raf=requestAnimationFrame(frame);
@@ -3600,7 +3658,7 @@ function sndBuild(){
     const fretAt=(bi_,ni_,s_)=>{ const b_=tb[bi_], n_=b_&&b_.notes&&b_.notes[ni_]; if(!n_) return null;
       const h_=(n_.hit||[]).find(h=>h.s===s_&&isdig(h.f)&&!(h.off>0)); return h_?+h_.f:null; };
     (row.tab.slurs||[]).forEach(q=>{ const key=q.b1+','+q.n1+','+q.s;
-      if(q.k==='tie'){ tied.add(key); return; }
+      if(q.k==='tie'){ if(!FOL||q.b0===q.b1) tied.add(key); return; }   /* 跟弹小节是单独放的：从上一小节连过来的音前面没人弹过，要自己拨 */
       const from=fretAt(q.b0,q.n0,q.s), to=fretAt(q.b1,q.n1,q.s);
       let k=q.k||''; if(k!=='H'&&k!=='P'&&k!=='sl') k=(from!=null&&to!=null&&to<from)?'P':'H';   /* 没标字母的连线：上行当击弦、下行当勾弦 */
       lega.set(key,{k,from}); });
@@ -3671,7 +3729,7 @@ function sndBuild(){
         for(const h of digs){ if(!isdig(h.f)) continue; if(h.off<0) pre[h.s]={f:+h.f,k:h.lk||'H'}; else if(!(h.off>0)) main[h.s]=+h.f; }
         for(const h of digs){
           const key=bi+','+ni+','+h.s;
-          if(h.paren||tied.has(key)) continue;        /* 括号音 = 延续上一个音；延音线后音不拨 */
+          if((h.paren&&!(FOL&&acc-(n.dur||0)<1e-6))||tied.has(key)) continue;        /* 括号音 = 延续上一个音；延音线后音不拨 */
           let fret=null;
           if(isdig(h.f)) fret=+h.f;
           else if(h.f==='x'){ const g=grip&&grip[5-h.s]; if(g!=null&&isdig(g)) fret=+g; }
@@ -3711,7 +3769,7 @@ function sndBuild(){
   PL.forEach((m,i)=>{
     const row=sc.rows[m.sr], so=row&&row.solo; if(!so||row.tab_only) return;
     const tb=so.bars||[], tied=new Set(), lega=new Map();
-    (so.slurs||[]).forEach(q=>{ const key=q.b1+','+q.n1; if(q.k==='tie') tied.add(key); else if(q.k==='H'||q.k==='P'||q.k==='sl') lega.set(key,q.k); });
+    (so.slurs||[]).forEach(q=>{ const key=q.b1+','+q.n1; if(q.k==='tie'){ if(!FOL||q.b0===q.b1) tied.add(key); } else if(q.k==='H'||q.k==='P'||q.k==='sl') lega.set(key,q.k); });
     let u0=CUM[i];
     for(let bi=m.b0; bi<m.b1 && bi<tb.length; bi++){
       const b=tb[bi], units=m.bars[bi-m.b0]||0, beats=b.beats||1; let acc=0;
@@ -3726,13 +3784,17 @@ function sndBuild(){
       u0+=units;
     }
   });
+  if(FOL){ const gap={};      /* 跟弹：空着的小节不发声，开头把上一小节还在响的弦按住 */
+    PL.forEach((m,i)=>{ if(m.fo&&m.fo.gap) for(let u=CUM[i];u<CUM[i+1];u++) gap[u]=1; });
+    EV=EV.filter(e=>!gap[Math.floor(e.u)]);
+    PL.forEach((m,i)=>{ if(m.fo&&m.fo.gap) EV.push({u:CUM[i],uo:0,dts:0,mute:true,all:true}); }); }
   EV.sort((a,b)=>(a.u-b.u)||(a.dts-b.dts));
   drmPlan();
 }
 function sndLB(u){ let lo=0, hi=EV.length; while(lo<hi){ const m=(lo+hi)>>1; if(EV[m].u<u) lo=m+1; else hi=m; } return lo; }
 function sndAnchor(){ sT=aT; sPos=aPos; en=-1; sndCancel(); }
 function sndSched(){
-  if(!SND||!acx||!EV.length||(!playing&&!armed)) return;
+  if((!SND&&!FOL)||!acx||!EV.length||(!playing&&!armed)) return;
   const now=acx.currentTime, hz=now+1.0, spu=60/(bpm*GRP);
   if(en<0) en=sndLB(sPos-1e-6);
   for(let guard=0; guard<4000; guard++){
@@ -3896,7 +3958,7 @@ function sndLegato(e,t){
 }
 function sndPlay(e,t){
   sndBusGet();
-  if(e.mute){ for(let s=0;s<6;s++) sndStop(s,t,0.03); return; }
+  if(e.mute){ for(let s=0;s<(e.all?12:6);s++) sndStop(s,t,0.03); return; }
   if(e.leg && e.fret!=null && sndLegato(e,t)) return;
   sndStop(sVI(e),t,0.004);
   const src=acx.createBufferSource(), g=acx.createGain();
@@ -4135,7 +4197,7 @@ function drmFill(u){
   return out;
 }
 function drmSched(){
-  if(!DRM||!acx||(!playing&&!armed)||!PL.length) return;
+  if(!DRM||FOL||!acx||(!playing&&!armed)||!PL.length) return;
   const now=acx.currentTime, hz=now+1.0, ups=bpm*GRP, spu=60/ups;
   while(dnb<=TOT){
     if(SEL && dnb>=SEL.b && dPos<SEL.b){ dT+=(W(SEL.b)-W(dPos))*spu; dPos=SEL.a; dnb=Math.ceil(SEL.a-1e-6); }
@@ -4287,12 +4349,12 @@ function voxStart(when, u){                 /* 在音频时刻 when 从单位 u 
 function voxRit(){ return RIT ? {a:RIT.a*voxSpu0(), L:RIT.L*voxSpu0(), D:RIT_D} : null; }   /* 渐慢段换算成音轨秒数，worklet 按音轨位置算速度系数 */
 function voxAnchor(){
   voxKill();
-  if(!VOX||!acx||!(playing||armed)) return;
+  if(!VOX||FOL||!acx||!(playing||armed)) return;
   if(!xBuf){ voxLoad().then(ok=>{ if(ok&&VOX&&(playing||armed)&&!xSrc) voxStart(aT,aPos); }); return; }
   voxStart(aT,aPos);
 }
 function voxSched(){                        /* 选段循环：到段尾前 1 秒把下一遍排上，老的那一段恰在段尾停 */
-  if(VOX && acx && (playing||armed) && !xEnd && !(xSrc||xOn) && voxInfo()){
+  if(VOX && !FOL && acx && (playing||armed) && !xEnd && !(xSrc||xOn) && voxInfo()){
     /* 自愈（用户 2026-11-01：开谱时「人声」亮着，按播放却不唱，要再点两下才唱）：
        播放中该唱却没在唱——解码还没完成、开谱时解码失败过（Safari 没手势建的上下文）、或上下文刚从 suspended 恢复——
        有了音轨就从当前位置接上；没音轨且上下文在跑就再试着载入（2 秒一次，最多 4 次） */
@@ -4395,7 +4457,7 @@ function stopSched(){ clearInterval(schedTimer); schedTimer=0; }
 const PLAYD='M1 1.2 14 8.5 1 15.8Z', PAUSED='M1.5 1h4v15h-4ZM9.5 1h4v15h-4Z';
 function icon(){ pico.firstElementChild.setAttribute('d', playing?PAUSED:PLAYD); }
 const P={
-  go(audioAt){ last=performance.now(); playing=true; icon(); wake(true); if(metro||SND||DRM||VOX) audio();
+  go(audioAt){ last=performance.now(); playing=true; icon(); wake(true); if(metro||SND||DRM||VOX||FOL) audio();
         /* 预备拍交棒：轮询是 40ms 一次，交棒时正式第 1 拍其实已经响过一会儿了——把这段补进游标，别从一开始就慢半拍 */
         if(audioAt!=null && acx){ const late=acx.currentTime-audioAt; if(late>0 && late<0.5) pos=Math.min(TOT, pos+late*bpm*GRP/60); }
         /* armed 表示预备拍已经把格子定好、排程器也在跑了，这里不能重新对齐——
@@ -4423,7 +4485,7 @@ let cid=0;
    起拍前就已经进了节奏，不用现找。 */
 function countIn(){
   if(!PL.length) return;
-  clearInterval(cid); if(metro||SND||DRM||VOX) audio();
+  clearInterval(cid); if(metro||SND||DRM||VOX||FOL) audio();
   if(pos>=TOT) seek(0);
   const m=PL[at(pos).i];
   const units=(m.bars&&m.bars[0])||GRP*2;          /* 第一小节有几个单位 */
@@ -4431,11 +4493,11 @@ function countIn(){
   const mains=Math.max(1,Math.ceil(units/GRP));    /* 这一小节几个主拍 */
   count.hidden=false; count.firstElementChild.textContent=mains;
   let playAt=null;
-  if((metro||SND||DRM||VOX)&&acx){
+  if((metro||SND||DRM||VOX||FOL)&&acx){
     const t0=acx.currentTime+0.06;
-    for(let u=0;u<units && (metro||DRM);u++){     /* 只开试听：不打预备拍的响，但格子照样定（下面）；开着鼓没开节拍器：用踩镲数拍 */
+    for(let u=0;u<units && (metro||DRM||FOL);u++){     /* 只开试听：不打预备拍的响，但格子照样定（下面）；开着鼓没开节拍器：用踩镲数拍 */
       const main=(u%GRP)===0;
-      if(metro){ if(main||subdiv) tickAt(t0+u*spu, u===0?2:(main?1:0));
+      if(metro||FOL){ if(main||subdiv) tickAt(t0+u*spu, u===0?2:(main?1:0));
                  if(subdiv && GRP===1) tickAt(t0+u*spu+spu/2, 0); }   /* 预备拍也要带上细分 */
       else if(main) drmHit(u===0?'kick':'hat', t0+u*spu, u===0?1:0.8);
     }
@@ -4577,6 +4639,7 @@ function setSub(on){ subdiv=!!on; lss('subdiv',subdiv?'1':'0');
   ballBuild(); if(PL.length) paint(); }   /* 小球跟着细分开关换跳法 */
 $('sub').onclick =e=>{ e.stopPropagation(); setSub(!subdiv); };
 $('mode').onclick=()=>setMode(!ribbon);
+$('folBtn').onclick=e=>{ e.stopPropagation(); if(FOL) folEnd(); else folStart(); };
 $('loopBtn').onclick=()=>{ setLoop(LOOP===''?'list':(LOOP==='list'?'one':'')); say(LOOP==='one'?'单曲循环':(LOOP==='list'?'列表循环：播完接下一首':'不循环')); };
 setLoop(LOOP);
 /* 弹出面板默认在按钮正上方居中；按钮靠屏幕边（手机上「节拍器」在最左）会被切掉，露出来后量一下、往里推 */
@@ -4794,10 +4857,11 @@ addEventListener('keydown',e=>{
   else if(k==='m'||k==='M'){ setMetro(!metro); }
   else if(k==='p'||k==='P'){ setSnd(!SND, true); }
   else if(k==='d'||k==='D'){ setDrm(!DRM); }
+  else if((k==='f'||k==='F') && !$('folBtn').hidden){ if(FOL) folEnd(); else folStart(); }
   else if(k==='v'||k==='V'){ setVox(!VOX, true); }
   else if(k==='s'||k==='S'){ setSub(!subdiv); }
   else if(k==='r'||k==='R'){ P.stop(); seek(0); }
-  else if(k==='Escape'){ if(!closePops()) selClear(); }
+  else if(k==='Escape'){ if(!closePops()){ if(FOL) folEnd(); else selClear(); } }
 });
 /* 原来动一下鼠标就重置计时。现在的规矩是：开始播放 3 秒后收起，
    只有「点谱面暂停」才放回来，中途晃鼠标不该把它顶出来。 */
@@ -4818,6 +4882,7 @@ window.__GS = {
   shareUrl: () => shareUrl(),
   get snd(){ return {on:SND, n:EV.length, ev:EV, played:sPlayed, leg:sLeg, rates:sVoice.map(v=>v?+v.playbackRate.value.toFixed(4):null), bufs:Object.keys(sBuf).length, buf:sBuf, live:sAll.length, err:sndErr, acx:acx&&acx.state, ct:acx&&acx.currentTime, sT, sPos, en, armed, playing, fall:FALL.kind, fallWant:FALL.want}; },
   get play(){ return PL; },
+  get fol(){ return FOL; },
   get total(){ return TOT; },
   get ribbon(){ return ribbon; },
   get pos(){ return pos; },
