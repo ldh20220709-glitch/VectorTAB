@@ -1896,7 +1896,7 @@ svg.vec text.cf-lyric.ko{fill:var(--kara,#d9480f);font-weight:700;animation:kpop
           </div></div>
         </div>
         <button class="sm cjk" id="mode" aria-pressed="false">跑马灯</button>
-        <button class="sm cjk" id="folBtn" aria-pressed="false" hidden title="跟弹：只留吉他，放一小节、空一小节给你弹（f）。练某几小节：先在谱上拖出选段；没选就从当前小节跟到尾">跟弹</button>
+        <button class="sm cjk" id="folBtn" aria-pressed="false" hidden title="跟弹：只留吉他，放一小节、空一小节给你弹（f）。练某几小节：在谱上选出来就循环跟这几小节，跟弹前后都能选；没选就从当前小节跟到尾">跟弹</button>
         <button class="sm cjk" id="loopBtn" aria-pressed="false" title="循环：不循环 → 列表循环 → 单曲循环">循环</button>
       </div>
     </div>
@@ -2764,7 +2764,7 @@ let acx=null, aT=0, aPos=0, nb=0, pend=[], armed=false;
 let SND=false;                  /* 试听：按谱发声（引擎见下文「试听」一节） */
 let DRM=false;                  /* 鼓伴奏（见下文「鼓」一节） */
 let VOX=false;                  /* 人声（离线合成的音轨，见下文「人声」一节） */
-let FOL=null;                   /* 跟弹（见下文 seqNow）：{a,b 原演奏顺序的单位区间, loop 跟的是选段, sel 进来前的选段} */
+let FOL=null;                   /* 跟弹开着（见下文 seqNow） */
 let xBuf=null, xSrc=null, xOld=[], xBus=null, xId='', xErr='', xLoading=null, xT=0, xPos=0, xEnd=0;
 let xNode=null, xWk=null, xWkId='', xOn=false, xRate=1;
 let xBytes=null, xBytesId='', xFetching=null, xRetryAt=0, xRetries=0;   /* 开谱时只预取字节，解码等到有了用户手势的 AudioContext 再做 */   /* AudioWorklet 时间伸缩：变速不变调 */
@@ -2849,7 +2849,7 @@ ribbon = lsg('ribbon')==='1'; metro = lsg('metro')==='1'; subdiv = lsg('subdiv')
    跑马灯 = 展开反复，一条带子只往前走；
    整页   = 谱面只铺一遍（和印刷谱一致），反复时游标跳回原位，能看出整首的结构。 */
 
-/* 跟弹：只留吉他，放一小节、空一小节给人弹。演奏顺序临时展开成一小节一条、每小节两遍（第二遍 gap 空着），
+/* 跟弹：只留吉他，放一小节、空一小节给人弹。整首演奏顺序临时展开成一小节一条、每小节两遍（第二遍 gap 空着），
    游标、节拍器、选段循环都不用单独改；退出后换回 S.seq。fo 记着它在原顺序里的位置：起始单位、第几小节、第几遍 */
 function seqNow(){
   if(!FOL) return S.seq;
@@ -2862,9 +2862,8 @@ function seqNow(){
     if(it.sec!=null) sec=it.sec;
     const k=seen[it.r]||0; seen[it.r]=k+1;
     for(let b=sp[0];b<sp[1];b++){
-      if(u>=FOL.a-1e-6 && u<FOL.b-1e-6){
-        const kv=tot[it.r]>1?k:-1, s=sec!==last?sec:null; last=sec;
-        out.push({r:it.r,cut0:b,cut:b+1,sec:s,fo:{gap:false,u0:u,no,kv}},{r:it.r,cut0:b,cut:b+1,sec:null,fo:{gap:true,u0:u,no,kv}}); }
+      const kv=tot[it.r]>1?k:-1, s=sec!==last?sec:null; last=sec;
+      out.push({r:it.r,cut0:b,cut:b+1,sec:s,fo:{gap:false,u0:u,no,kv}},{r:it.r,cut0:b,cut:b+1,sec:null,fo:{gap:true,u0:u,no,kv}});
       u+=S.rows[it.r].bb[b]; no++; } });
   return out;
 }
@@ -2873,8 +2872,8 @@ function folPaint(fo){ const t=$('folTag'); if(!t) return;
   t.hidden=!fo; $('wrapP').classList.toggle('folgap',!!(fo&&fo.gap)); if(!fo) return;
   const s=(fo.gap?'你来弹':'听')+' · 第 '+(fo.no+1)+' 小节'; if(t.textContent!==s) t.textContent=s;
   t.classList.toggle('gap',fo.gap); }
-function folBuild(){ const b=bpm; buildPlay(); setBpm(b); if(FOL&&FOL.loop) selSet(0,TOT); selPaint(); folUi(); if(PL.length) paint(); }
-/* 拖了选段就跟这一段（绕着来）；没拖就从当前小节一路跟到尾 */
+function folBuild(){ const b=bpm; buildPlay(); setBpm(b); selPaint(); folUi(); if(PL.length) paint(); }
+/* 拖了选段就循环跟这一段（跟弹中也能选、能改、能取消）；没拖就从当前小节一路跟到尾 */
 function folStart(){
   if(!S||!S.score||!EV.length){ say('这首没有吉他音可以跟'); return; }
   if(cid) toggle();
@@ -2882,17 +2881,20 @@ function folStart(){
   let u=CUM[a.i]; for(const n of m.bars){ if(u+n>pos+1e-6) break; u+=n; }
   if(pos>=TOT-1e-6) u=0;
   P.stop();
-  FOL={a:s?s.a:u, b:s?s.b:TOT, loop:!!s, sel:s&&{a:s.a,b:s.b}};
-  folBuild();
+  FOL=true; folBuild();
   if(!FOL){ say('这一段没有可以跟的小节'); return; }
-  seek(0); toggle();
+  const heard=v=>{ const i=PL.findIndex(q=>!q.fo.gap && v>=q.fo.u0-1e-6 && v<q.fo.u0+q.beats-1e-6); return i<0?0:CUM[i]; };   /* 原来的单位 → 展开后「听」那遍的起点 */
+  if(s) selSet(heard(s.a), heard(s.b-0.5)+0.5);
+  selNew=false; seek(s?SEL.a:heard(u)); countIn();
   say(s?'跟弹这一段：放一小节，空一小节给你弹，绕着来':'跟弹：放一小节，空一小节给你弹');
 }
 function folEnd(){
-  const a=at(pos), f=PL[a.i]&&PL[a.i].fo, u=f?f.u0+a.b:0, F=FOL;
+  const a=at(pos), f=PL[a.i]&&PL[a.i].fo, u=f?f.u0+a.b:0;
+  let s=null;
+  if(SEL){ const f0=PL[at(SEL.a).i].fo, m=PL[at(SEL.b-1e-6).i]; if(f0&&m.fo) s={a:f0.u0, b:m.fo.u0+m.beats}; }   /* 选段换回原来的单位 */
   if(cid) toggle();
   FOL=null; P.stop(); folBuild();
-  if(F.sel && F.sel.b<=TOT) selSet(F.sel.a,F.sel.b);
+  if(s && s.b<=TOT) selSet(s.a,s.b);
   seek(u); say('跟弹结束');
 }
 function buildPlay(){
@@ -4708,9 +4710,11 @@ function barHits(e){
 }
 function selSet(a,b){
   if(b<=a){ SEL=null; selPaint(); return; }
+  if(FOL){ const i0=at(a).i, i1=at(Math.max(a,b-1e-6)).i; a=CUM[i0-i0%2]; b=CUM[(i1|1)+1]; }   /* 跟弹：选段按「听 + 空」成对吸附 */
   let n=0;                                   /* 选了几小节（跨谱条也算对） */
   PL.forEach((m,i)=>{ let o=CUM[i]; m.bars.forEach(w=>{ if(o>=a-1e-6 && o+w<=b+1e-6) n++; o+=w; }); });
-  SEL={a,b,n}; selPaint(); paint();
+  SEL={a,b,n:FOL?n/2:n}; selPaint(); paint();
+  if(FOL && playing && (pos<a||pos>=b)) seek(a);   /* 跟弹中选了别处：立刻跳过去 */
 }
 function selClear(){ if(!SEL && !selAnc) return; SEL=null; selAnc=null; stage.classList.remove('selecting'); selPaint(); paint(); say('已取消选段'); }
 function selPaint(){
