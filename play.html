@@ -4606,7 +4606,7 @@ function applyMode(){
 }
 function setMode(on){
   ribbon=!!on; lss('ribbon',ribbon?'1':'0');
-  const keep=pos, ks=SEL; buildPlay(); SEL=ks; seek(keep); selPaint();   /* 两种排法的 DOM 不同，必须重建；选段是时间轴上的，照留 */
+  const keep=pos, ks=SEL, kb=bpm; buildPlay(); setBpm(kb); SEL=ks; seek(keep); selPaint();   /* 速度是人调的，换排法不动；两种排法的 DOM 不同，必须重建；选段是时间轴上的，照留 */
 }
 
 $('play').onclick=e=>{ e.stopPropagation(); toggle(); };
@@ -4743,7 +4743,7 @@ function selPaint(){
 }
 stage.addEventListener('pointerdown',e=>{
   if(e.pointerType!=='touch') selEat=false;  /* 新的一下按下：上一次选段留下的「吞 click」标记作废（不靠定时器，免得吞掉真点击） */
-  if(e.pointerType==='touch' || e.button!==0 || playing || cid || !PL.length) return;
+  if(e.pointerType==='touch' || e.button!==0 || (playing&&!FOL) || cid || !PL.length) return;   /* 跟弹放着也能选 */
   const hits=barHits(e); if(!hits.length) return;
   e.preventDefault();                        /* 别拖出一片文字选区（矢量谱里的字是真文字） */
   if(e.shiftKey && SEL){
@@ -4791,7 +4791,7 @@ const LP_MS=420, LP_MOVE=10;
 function lpCancel(){ if(lp){ clearTimeout(lp.tm); lp=null; } }
 stage.addEventListener('touchstart',e=>{
   lpCancel(); selEat=false;                  /* 新的一次触摸：上一次长按留下的「吞 click」标记作废 */
-  if(e.touches.length!==1 || playing || cid || !PL.length) return;
+  if(e.touches.length!==1 || (playing&&!FOL) || cid || !PL.length) return;   /* 跟弹放着也能长按选小节 */
   const t=e.touches[0];
   if(!hitsAt(t.clientX,t.clientY).length) return;
   lp={x:t.clientX, y:t.clientY, on:false};
