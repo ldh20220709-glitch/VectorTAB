@@ -3508,8 +3508,9 @@ function ballHit(p,lv){
   pick.forEach(d=>d.classList.add('on'));
 }
 
-/* 当前行钉在视口顶上（用户 2026-11-01：「不用显示当前行的上一行；底栏隐藏或打开时谱面会动；上面固定住」）：
-   滚动目标只由当前行的 offsetTop 决定，不看视口高度，底栏收放只改下面的空间，谱面纹丝不动。
+/* 当前行放在视口第二行，上面留着谱面上的上一行（用户 2026-11-07：「可以反复对比着看上一行」，取代 11-01 的钉在第一行）：
+   滚动目标只由上一行的 offsetTop 决定，不看视口高度，底栏收放只改下面的空间，谱面纹丝不动（11-01「上面固定住」仍有效）。
+   屏幕矮到两行放不下时（手机横屏）才往下让，当前行总要看全。
    快到谱尾时 scrollHeight 不够把末行顶上去，就在谱面底下临时垫一截（padTail），垫多少算多少；回到顶端清掉。 */
 let padTail=0;
 function padB(v){ v=Math.max(0,Math.round(v)); if(v===padTail) return; padTail=v; paper.style.marginBottom=v?v+'px':''; }
@@ -3517,7 +3518,8 @@ function follow(dt){
   if(ribbon||!PL.length) return;
   const i=at(pos).i, r=prows[PL[i].row], vh=stage.clientHeight;
   if(!playing && pos<=0){ padB(0); sy=0; stage.scrollTop=0; written=0; return; }  /* 未播放时停在顶端看标题 */
-  let want=r.offsetTop - 8;
+  const pr=prows[PL[i].row-1]||r;
+  let want=Math.max(pr.offsetTop, Math.min(r.offsetTop, r.offsetTop+r.offsetHeight+16-vh)) - 8;
   const H0=stage.scrollHeight-padTail;                /* 不含垫底的真实内容高 */
   padB(Math.max(padTail, want+vh-H0));                /* 只增不减：播放中缩回去会让谱面跳 */
   want=Math.max(0, Math.min(stage.scrollHeight-stage.clientHeight, want));
@@ -3766,7 +3768,9 @@ function sndBuild(){
           hs.push(e);
         }
         if((arrow||roll) && !hs.length && !tied.has(bi+','+ni+',-1')){   /* 空箭头 / 空琶音（波浪线旁边没写数字）：按当前和弦扫；没有和弦图就扫各弦最近按过的品位；延音线连过来的（成都末小节第二个琶音，弦记 -1）不再扫 */
-          const s0=arrow?Math.max(0,Math.round(+arrow.a||0)):0, s1=arrow?Math.min(5,Math.round(arrow.b!=null?+arrow.b:5)):5;
+          const s0=arrow?Math.max(0,Math.round(+arrow.a||0)):0; let s1=arrow?Math.min(5,Math.round(arrow.b!=null?+arrow.b:5)):5;
+          /* 扫到低音区的一下要带上和弦的最低音（用户 2026-11-06：「这个扫弦节奏型听起来声音很怪」）：《传奇》G 的箭头画到五弦，没有六弦根音，听着是转位 */
+          if(arrow&&grip&&s1>=4) for(let s=5;s>s1;s--) if(isdig(grip[5-s])){ s1=s; break; }
           for(let s=s0;s<=s1;s++){ const g=grip?grip[5-s]:lastF[s]; if(g!=null&&isdig(g)) hs.push({u, uo:0, dts:0, s, fret:+g, vel:vel*(melS!=null?0.5:0.8)}); }
         }
         if(arrow||roll){
@@ -3777,7 +3781,8 @@ function sndBuild(){
           const fin=roll && !arrow && isLastBar;
           const gap=fin ? 0.11 : (roll&&!arrow ? 0.028 : 0.012);
           hs.forEach((e,k)=>{ e.dts+=k*gap; if(hs.length>2) e.vel*=0.85; if(arrow&&!bassFirst) e.vel*=0.6;
-            if(fin && hs.length>1) e.vel*=1-0.5*k/(hs.length-1); });   /* 回扫比下扫轻：0.88→0.6（用户 2026-11-01：「现在扫弦毫无轻重可言」） */
+            if(fin && hs.length>1) e.vel*=1-0.5*k/(hs.length-1);
+            if(arrow){ e.vel=Math.max(0.3,e.vel); e.ring=true; } });   /* 同一处：回扫原来叠到 0.17，比重拍低 12 dB，还把正响着的和弦 4ms 掐掉，一下一个洞（实测起音后反而比起音前低 7 dB）。力度保底 0.3、旧音 40ms 淡出 */   /* 回扫比下扫轻：0.88→0.6（用户 2026-11-01：「现在扫弦毫无轻重可言」） */
         }
         EV.push(...hs);
       });
@@ -3980,7 +3985,7 @@ function sndPlay(e,t){
   sndBusGet();
   if(e.mute){ for(let s=0;s<(e.all?12:6);s++) sndStop(s,t,0.03); return; }
   if(e.leg && e.fret!=null && sndLegato(e,t)) return;
-  sndStop(sVI(e),t,0.004);
+  sndStop(sVI(e),t,e.ring?0.04:0.004);
   const src=acx.createBufferSource(), g=acx.createGain();
   const midi=e.fret==null?null:S_MIDI[e.s]+e.fret+sndCapo();
   src.buffer = midi==null ? sndNoiseBuf() : sndBuf(midi, e.vel);
