@@ -333,7 +333,13 @@ function tab_svg(row, x0, width, y, out, clef, sig) {
           && T(get(b.notes[j + 1], 'tup')) === T(get(b.notes[i0], 'tup'))) j++;
         const yy = by - (k - 1) * (BEAM + 2.5);
         let x1_ = pos[i0][0], x2_ = pos[j][0];
-        if (j === i0) x2_ = x1_ + 9;
+        if (j === i0) {
+          const u_ = b._u || UNIT;
+          if (k >= 2 && i0 > 0 && b.notes[i0 - 1].beams >= 1
+            && Math.trunc(pos[i0 - 1][1] / u_ + 1e-6) === Math.trunc(pos[i0][1] / u_ + 1e-6)
+            && T(get(b.notes[i0 - 1], 'tup')) === T(get(b.notes[i0], 'tup'))) x1_ = x2_ - 9;   // 十六分短梁朝左（朝它那组梁）
+          else x2_ = x1_ + 9;
+        }
         out.push(`<rect x="${f1(x1_ - 0.8)}" y="${f1(yy - BEAM)}" width="${f1(x2_ - x1_ + 1.6)}" height="${BEAM}" class="cf-tab"/>`);
         i0 = j + 1;
       }
