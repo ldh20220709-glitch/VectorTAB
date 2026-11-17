@@ -650,12 +650,14 @@ function render(d, tab) {
     }
     // 和弦图不许叠：后一个往右推到前一个图右边 2 个弦距（同 draw.py）
     let lastcx = -1e9;
-    const _cx = v => { v = Math.max(v, lastcx + CHU * 7); lastcx = v; return v; };
+    let bnR = -1e9;   // 小节号方框右沿：和弦图别压在它上面
+    const _cx = v => { v = Math.max(v, lastcx + CHU * 7, bnR); lastcx = v; return v; };
     bars.forEach((b, bi) => {
       // 小节号：黑底反白小方框（同 draw.py）
       const bnw = 6 + 8 * String(barNo).length;
-      out.push(`<rect x="${f1(x + 1)}" y="${y + taby(tonly[ri]) - 17}" width="${bnw}" height="14" rx="2" class="cf-jianpu"/>`);
-      out.push(`<text x="${f1(x + 1 + bnw / 2)}" y="${y + taby(tonly[ri]) - 5}" font-size="12" font-weight="700" font-family="Helvetica" text-anchor="middle" class="cf-bg">${barNo}</text>`);
+      out.push(`<rect x="${f1(x + 1)}" y="${y + taby(tonly[ri]) - 21}" width="${bnw}" height="14" rx="2" class="cf-jianpu"/>`);
+      out.push(`<text x="${f1(x + 1 + bnw / 2)}" y="${y + taby(tonly[ri]) - 9}" font-size="12" font-weight="700" font-family="Helvetica" text-anchor="middle" class="cf-bg">${barNo}</text>`);
+      bnR = x + 1 + bnw + 5;
       barNo++;
       const bw = avail * bar_width(b) / tot;
       const rb = sum(bars.slice(0, bi).map(q => q.beats));
